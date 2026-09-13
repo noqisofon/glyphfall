@@ -1,0 +1,10 @@
+# Rust build result
+target/
+
+# LSP directory
+.clj-kondo/
+.lsp/
+
+# WinMerge backfile
+*.bak
+

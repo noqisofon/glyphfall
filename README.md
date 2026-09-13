@@ -37,3 +37,16 @@ cargo run
 - 会話メモにある「話題ウィンドウ／行動ウィンドウ」の三分割レイアウトへの拡張
   - 今回の `spawn_message_window` はレイアウトのプリミティブとして
     そのまま複数配置に転用できる設計にしてある
+
+## アーキテクチャ決定記録 (ADR)
+
+ゲームデザイン思想、システム仕様、技術選定の決定事項は [docs/adr/](docs/adr/README.md) に記録されています。
+- [ADR-0000: ADRのフォーマットを4段構成にする](docs/adr/0000-adr-template.md)
+- [ADR-0001: Daggerfall × DQ ハイブリッドゲームデザインの採用](docs/adr/0001-daggerfall-dq-hybrid-concept.md)
+- [ADR-0002: 三分割会話UIと手動キーワード記憶（「覚える」メカニクス）](docs/adr/0002-tri-split-conversation-and-memorization.md)
+- [ADR-0003: 隠しパラメータ「影響度」によるパーティ自律行動制御](docs/adr/0003-party-influence-and-autonomous-behavior.md)
+- [ADR-0004: 旅シミュレーション型ファストトラベルと創発イベント](docs/adr/0004-travel-simulation-and-emergent-events.md)
+- [ADR-0005: 主人公の非英雄性（パンピー）と勇者キャンペーンの分離](docs/adr/0005-commoner-protagonist-and-hero-campaign-split.md)
+- [ADR-0006: Bevy ECS と罫線グリッドによるターミナルUIアーキテクチャ](docs/adr/0006-glyph-grid-terminal-ui-architecture.md)
+
+
