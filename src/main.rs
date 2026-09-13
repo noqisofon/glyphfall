@@ -3,12 +3,14 @@ use rand::{thread_rng, Rng};
 
 mod battle;
 mod party;
+mod town;
 
 use battle::{create_default_monsters, BattleState, Monster};
 use party::{
     diagnose_member, evaluate_command, ActionOutcome, Influence, MentalState, PartyCommand,
     PartyMember, Personality, PlayerSkills,
 };
+use town::{format_town_display, MoveOutcome, TownState};
 
 // ─────────────────────────────────────────────
 // 罫線文字セット（単線）
@@ -35,6 +37,12 @@ mod palette {
 const FONT_PATH: &str = "fonts/ZenKakuGothicNew-Regular.ttf";
 const CELL_PX: f32 = 18.0;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
+pub enum AppMode {
+    Town,
+    Battle,
+}
+
 #[derive(Component)]
 struct TypewriterMessage {
     full_text: String,
@@ -49,7 +57,7 @@ struct MessageTextNode;
 struct StatusHeaderNode;
 
 #[derive(Component)]
-struct MonsterGlyphNode;
+struct CenterDisplayNode;
 
 #[derive(Resource)]
 struct PartyState {
@@ -67,13 +75,15 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Glyphfall - Pure Glyph Battle Prototype".into(),
+                title: "Glyphfall - Town & Battle Exploration Prototype".into(),
                 resolution: (960.0_f32, 640.0_f32).into(),
                 ..default()
             }),
             ..default()
         }))
         .insert_resource(ClearColor(palette::BG))
+        .insert_resource(AppMode::Town)
+        .insert_resource(TownState::new())
         .insert_resource(PlayerResource {
             skills: PlayerSkills {
                 magic_knowledge: 45,
@@ -132,7 +142,8 @@ fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     party: Res<PartyState>,
-    battle: Res<BattleState>,
+    town: Res<TownState>,
+    mode: Res<AppMode>,
 ) {
     let font = asset_server.load(FONT_PATH);
 
@@ -149,10 +160,10 @@ fn setup(
         })
         .with_children(|root| {
             // 上部：ステータス＆操作ガイドウィンドウ (行数 4)
-            spawn_status_window(root, font.clone(), &party);
+            spawn_status_window(root, font.clone(), &party, *mode, &town);
 
-            // 中央：敵モンスターのグリフアートウィンドウ (行数 9)
-            spawn_monster_window(root, font.clone(), &battle);
+            // 中央：街マップ or 敵モンスターのグリフウィンドウ (行数 9)
+            spawn_center_window(root, font.clone(), &town);
 
             // 下部：メッセージウィンドウ (行数 5)
             spawn_message_window(
@@ -160,15 +171,15 @@ fn setup(
                 font.clone(),
                 46,
                 5,
-                "まもののむれが　あらわれた！\n[Tab]で仲間を選び、[1]たたかう や [2]みをまもる で指示を出そう。",
+                "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[WASD]で移動し仲間と街を探索しよう。\n[L]松明切替 | [B]地下迷宮(戦闘) | [Tab]仲間切替",
             );
         });
 }
 
-fn format_status_header(party: &PartyState) -> String {
+fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> String {
     let member = &party.members[party.selected_index];
     let mut header = format!(
-        "▼ 選択中の仲間 [No.{}/{}]: {} ({})  HP: {}/{}  MP: {}/{}\n",
+        "▼ 注目中の仲間 [No.{}/{}]: {} ({})  HP: {}/{}  MP: {}/{}\n",
         party.selected_index + 1,
         party.members.len(),
         member.name,
@@ -197,14 +208,33 @@ fn format_status_header(party: &PartyState) -> String {
             Personality::Yandere => "ヤンデレ(Yandere)",
         };
         header.push_str(&format!(
-            "  [DEBUG] 隠し影響度: {} {} | 精神: {} | 性格: {}\n",
-            member.influence.raw_value, abnormal_str, mental_str, personality_str
+            "  [DEBUG] 影響度: {} {} | 精神: {} | 性格: {} | 全視界: {}\n",
+            member.influence.raw_value, abnormal_str, mental_str, personality_str, town.debug_see_all
         ));
     } else {
-        header.push_str("  [ステータス: 良好] (F1キーで開発用隠しパラメータを表示)\n");
+        match mode {
+            AppMode::Town => {
+                let torch_str = if town.torch_active { "点灯中(半径6)" } else { "消灯(半径2)" };
+                header.push_str(&format!(
+                    "  [王都アルカン・商業区] 松明: {} | 仲間列: @(主人公) f s m k\n",
+                    torch_str
+                ));
+            }
+            AppMode::Battle => {
+                header.push_str("  [地下封鎖迷宮・戦闘交戦中] (F1キーで開発用隠しパラメータを表示)\n");
+            }
+        }
     }
 
-    header.push_str("操作: [Tab]仲間切替 | [1]たたかう | [2]みをまもる | [3]すてみ | [4]観察 | [N]敵切替 | [Space]スキップ");
+    match mode {
+        AppMode::Town => {
+            header.push_str("操作: [WASD]移動 | [L]松明切替 | [B]地下迷宮(戦闘) | [Tab]仲間切替 | [Space]スキップ");
+        }
+        AppMode::Battle => {
+            header.push_str("操作: [1]たたかう | [2]みをまもる | [3]すてみ | [4]観察 | [N]敵切替 | [B]街へ帰還");
+        }
+    }
+
     header
 }
 
@@ -224,7 +254,13 @@ fn format_monster_display(monster: &Monster) -> String {
     )
 }
 
-fn spawn_status_window(parent: &mut ChildBuilder, font: Handle<Font>, party: &PartyState) {
+fn spawn_status_window(
+    parent: &mut ChildBuilder,
+    font: Handle<Font>,
+    party: &PartyState,
+    mode: AppMode,
+    town: &TownState,
+) {
     let inner_cols = 46;
     let inner_rows = 4;
     let outer_cols = inner_cols + 2;
@@ -248,7 +284,7 @@ fn spawn_status_window(parent: &mut ChildBuilder, font: Handle<Font>, party: &Pa
                     padding: UiRect::all(Val::Px(4.0)),
                     ..default()
                 },
-                Text::new(format_status_header(party)),
+                Text::new(format_status_header(party, mode, town)),
                 TextFont {
                     font,
                     font_size: CELL_PX * 0.82,
@@ -260,7 +296,7 @@ fn spawn_status_window(parent: &mut ChildBuilder, font: Handle<Font>, party: &Pa
         });
 }
 
-fn spawn_monster_window(parent: &mut ChildBuilder, font: Handle<Font>, battle: &BattleState) {
+fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &TownState) {
     let inner_cols = 46;
     let inner_rows = 9;
     let outer_cols = inner_cols + 2;
@@ -286,14 +322,14 @@ fn spawn_monster_window(parent: &mut ChildBuilder, font: Handle<Font>, battle: &
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
-                Text::new(format_monster_display(battle.current_monster())),
+                Text::new(format_town_display(town)),
                 TextFont {
                     font,
                     font_size: CELL_PX * 0.85,
                     ..default()
                 },
                 TextColor(palette::TEXT),
-                MonsterGlyphNode,
+                CenterDisplayNode,
             ));
         });
 }
@@ -409,18 +445,19 @@ fn typewriter_tick(
 
 fn monster_flash_tick(
     time: Res<Time>,
+    mode: Res<AppMode>,
     mut battle: ResMut<BattleState>,
-    mut monster_query: Query<&mut TextColor, With<MonsterGlyphNode>>,
+    mut center_query: Query<&mut TextColor, With<CenterDisplayNode>>,
 ) {
-    if battle.is_flashing {
+    if *mode == AppMode::Battle && battle.is_flashing {
         battle.flash_timer.tick(time.delta());
-        if let Ok(mut color) = monster_query.get_single_mut() {
+        if let Ok(mut color) = center_query.get_single_mut() {
             *color = TextColor(palette::DAMAGE);
         }
         if battle.flash_timer.finished() {
             battle.is_flashing = false;
             battle.flash_timer.reset();
-            if let Ok(mut color) = monster_query.get_single_mut() {
+            if let Ok(mut color) = center_query.get_single_mut() {
                 *color = TextColor(palette::TEXT);
             }
         }
@@ -429,17 +466,19 @@ fn monster_flash_tick(
 
 fn handle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut town: ResMut<TownState>,
     mut party: ResMut<PartyState>,
     mut battle: ResMut<BattleState>,
     player: Res<PlayerResource>,
-    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<MonsterGlyphNode>)>,
-    mut monster_query: Query<&mut Text, (With<MonsterGlyphNode>, Without<MessageTextNode>, Without<StatusHeaderNode>)>,
+    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<CenterDisplayNode>)>,
+    mut center_query: Query<&mut Text, (With<CenterDisplayNode>, Without<MessageTextNode>, Without<StatusHeaderNode>)>,
     mut message_query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
 ) {
     let mut rng = thread_rng();
     let mut new_message = None;
     let mut update_header = false;
-    let mut update_monster = false;
+    let mut update_center = false;
 
     // [Space]: タイプライターの文字送りをスキップ
     if keyboard.just_pressed(KeyCode::Space) {
@@ -449,13 +488,16 @@ fn handle_input(
         }
     }
 
-    // [F1]: デバッグ表示切替
+    // [F1]: デバッグ表示切替（街探索時は全視界可視化もトグル）
     if keyboard.just_pressed(KeyCode::F1) {
         party.debug_mode = !party.debug_mode;
+        town.debug_see_all = party.debug_mode;
+        town.recompute_fov();
         update_header = true;
+        update_center = true;
     }
 
-    // [Tab]: 仲間切り替え
+    // [Tab]: 注目する仲間切り替え
     if keyboard.just_pressed(KeyCode::Tab) {
         party.selected_index = (party.selected_index + 1) % party.members.len();
         let member = &party.members[party.selected_index];
@@ -463,135 +505,207 @@ fn handle_input(
         update_header = true;
     }
 
-    // [N]: モンスター切り替え（テスト用）
-    if keyboard.just_pressed(KeyCode::KeyN) {
-        battle.next_monster();
-        let mon = battle.current_monster();
-        new_message = Some(format!("あらたな　魔物【{}】が　あらわれた！", mon.name));
-        update_monster = true;
+    // [B]: モード切替（街探索 ↔ 戦闘テスト）
+    if keyboard.just_pressed(KeyCode::KeyB) {
+        *mode = match *mode {
+            AppMode::Town => {
+                new_message = Some("地下迷宮の魔物とエンカウントした！\n[1]たたかう や [2]みをまもる で指示を出そう。[B]で街へ戻る。".into());
+                AppMode::Battle
+            }
+            AppMode::Battle => {
+                new_message = Some("王都アルカンの街並みへ生還した。\n[WASD]で街を歩き回れる。".into());
+                AppMode::Town
+            }
+        };
+        update_header = true;
+        update_center = true;
     }
 
-    // [1]: 「たたかう」
-    if keyboard.just_pressed(KeyCode::Digit1) {
-        let member = &party.members[party.selected_index];
-        let outcome = evaluate_command(member, PartyCommand::Attack, &mut rng);
-        match outcome {
-            ActionOutcome::Obeyed { action_msg } => {
-                let damage: i32 = rng.gen_range(8..=14);
-                let (mon_name, is_dead) = battle.apply_damage(damage);
-                update_monster = true;
-
-                let mut msg = format!(
-                    "{}に「たたかう」よう　指示した！\n{}\n{}に {}の ダメージを与えた！",
-                    member.name, action_msg, mon_name, damage
-                );
-
-                if is_dead {
-                    msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                    battle.next_monster();
-                    let next_mon = battle.current_monster();
-                    msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                }
-                new_message = Some(msg);
-            }
-            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                // ヤンデレ（ミレイ）の暴走攻撃時は敵に大ダメージが入る！
-                if member.personality == Personality::Yandere {
-                    let damage: i32 = rng.gen_range(16..=22);
-                    let (mon_name, is_dead) = battle.apply_damage(damage);
-                    update_monster = true;
-
-                    let mut msg = format!(
-                        "{}に「たたかう」よう　指示した！\n{}\n{}\nなんと　{}に {}の 大ダメージ！",
-                        member.name, reason_msg, action_msg, mon_name, damage
-                    );
-                    if is_dead {
-                        msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                        battle.next_monster();
-                        let next_mon = battle.current_monster();
-                        msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                    }
-                    new_message = Some(msg);
+    match *mode {
+        AppMode::Town => {
+            // [L]: 松明のON/OFF切り替え
+            if keyboard.just_pressed(KeyCode::KeyL) {
+                town.torch_active = !town.torch_active;
+                town.recompute_fov();
+                update_header = true;
+                update_center = true;
+                let status = if town.torch_active {
+                    "松明に火を灯した。周囲が明るくなった！（視界半径6マス）"
                 } else {
-                    new_message = Some(format!(
-                        "{}に「たたかう」よう　指示した！\n{}\n{}",
-                        member.name, reason_msg, action_msg
-                    ));
+                    "松明の火を消した。月明かりだけが頼りだ……（視界半径2マス）"
+                };
+                new_message = Some(status.into());
+            }
+
+            // 移動入力（WASD / 矢印キー）
+            let mut dx = 0;
+            let mut dy = 0;
+
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                dy -= 1;
+            } else if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                dy += 1;
+            } else if keyboard.just_pressed(KeyCode::KeyA) || keyboard.just_pressed(KeyCode::ArrowLeft) {
+                dx -= 1;
+            } else if keyboard.just_pressed(KeyCode::KeyD) || keyboard.just_pressed(KeyCode::ArrowRight) {
+                dx += 1;
+            }
+
+            if dx != 0 || dy != 0 {
+                let outcome = town.move_player(dx, dy);
+                update_center = true;
+
+                match outcome {
+                    MoveOutcome::Moved { message } => {
+                        if let Some(msg) = message {
+                            new_message = Some(msg);
+                        }
+                    }
+                    MoveOutcome::Blocked { message } => {
+                        if let Some(msg) = message {
+                            new_message = Some(msg);
+                        }
+                    }
+                    MoveOutcome::TriggerBattle { message } => {
+                        new_message = Some(message);
+                    }
                 }
             }
-        };
-    }
-
-    // [2]: 「みをまもる」
-    if keyboard.just_pressed(KeyCode::Digit2) {
-        let member = &party.members[party.selected_index];
-        let outcome = evaluate_command(member, PartyCommand::Defend, &mut rng);
-        let msg = match outcome {
-            ActionOutcome::Obeyed { action_msg } => {
-                format!("{}に「みをまもる」よう　指示した。\n{}", member.name, action_msg)
+        }
+        AppMode::Battle => {
+            // [N]: モンスター切り替え（テスト用）
+            if keyboard.just_pressed(KeyCode::KeyN) {
+                battle.next_monster();
+                let mon = battle.current_monster();
+                new_message = Some(format!("あらたな　魔物【{}】が　あらわれた！", mon.name));
+                update_center = true;
             }
-            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                format!(
-                    "{}に「みをまもる」よう　指示した！\n{}\n{}",
-                    member.name, reason_msg, action_msg
-                )
+
+            // [1]: 「たたかう」
+            if keyboard.just_pressed(KeyCode::Digit1) {
+                let member = &party.members[party.selected_index];
+                let outcome = evaluate_command(member, PartyCommand::Attack, &mut rng);
+                match outcome {
+                    ActionOutcome::Obeyed { action_msg } => {
+                        let damage: i32 = rng.gen_range(8..=14);
+                        let (mon_name, is_dead) = battle.apply_damage(damage);
+                        update_center = true;
+
+                        let mut msg = format!(
+                            "{}に「たたかう」よう　指示した！\n{}\n{}に {}の ダメージを与えた！",
+                            member.name, action_msg, mon_name, damage
+                        );
+
+                        if is_dead {
+                            msg.push_str(&format!("\n{}を　たおした！", mon_name));
+                            battle.next_monster();
+                            let next_mon = battle.current_monster();
+                            msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                        }
+                        new_message = Some(msg);
+                    }
+                    ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                        if member.personality == Personality::Yandere {
+                            let damage: i32 = rng.gen_range(16..=22);
+                            let (mon_name, is_dead) = battle.apply_damage(damage);
+                            update_center = true;
+
+                            let mut msg = format!(
+                                "{}に「たたかう」よう　指示した！\n{}\n{}\nなんと　{}に {}の 大ダメージ！",
+                                member.name, reason_msg, action_msg, mon_name, damage
+                            );
+                            if is_dead {
+                                msg.push_str(&format!("\n{}を　たおした！", mon_name));
+                                battle.next_monster();
+                                let next_mon = battle.current_monster();
+                                msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                            }
+                            new_message = Some(msg);
+                        } else {
+                            new_message = Some(format!(
+                                "{}に「たたかう」よう　指示した！\n{}\n{}",
+                                member.name, reason_msg, action_msg
+                            ));
+                        }
+                    }
+                };
             }
-        };
-        new_message = Some(msg);
-    }
 
-    // [3]: 「すてみ」（危険な命令・大ダメージ）
-    if keyboard.just_pressed(KeyCode::Digit3) {
-        let member = &party.members[party.selected_index];
-        let outcome = evaluate_command(member, PartyCommand::DesperateAttack, &mut rng);
-        match outcome {
-            ActionOutcome::Obeyed { action_msg } => {
-                let damage: i32 = rng.gen_range(25..=35);
-                let (mon_name, is_dead) = battle.apply_damage(damage);
-                update_monster = true;
-
-                let mut msg = format!(
-                    "{}に「すてみ」を　命じた！\n{}\n会心の一撃！　{}に {}の 痛恨のダメージ！",
-                    member.name, action_msg, mon_name, damage
-                );
-
-                if is_dead {
-                    msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                    battle.next_monster();
-                    let next_mon = battle.current_monster();
-                    msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                }
+            // [2]: 「みをまもる」
+            if keyboard.just_pressed(KeyCode::Digit2) {
+                let member = &party.members[party.selected_index];
+                let outcome = evaluate_command(member, PartyCommand::Defend, &mut rng);
+                let msg = match outcome {
+                    ActionOutcome::Obeyed { action_msg } => {
+                        format!("{}に「みをまもる」よう　指示した。\n{}", member.name, action_msg)
+                    }
+                    ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                        format!(
+                            "{}に「みをまもる」よう　指示した！\n{}\n{}",
+                            member.name, reason_msg, action_msg
+                        )
+                    }
+                };
                 new_message = Some(msg);
             }
-            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                new_message = Some(format!(
-                    "{}に「すてみ」を　命じた！\n{}\n{}",
-                    member.name, reason_msg, action_msg
-                ));
+
+            // [3]: 「すてみ」
+            if keyboard.just_pressed(KeyCode::Digit3) {
+                let member = &party.members[party.selected_index];
+                let outcome = evaluate_command(member, PartyCommand::DesperateAttack, &mut rng);
+                match outcome {
+                    ActionOutcome::Obeyed { action_msg } => {
+                        let damage: i32 = rng.gen_range(25..=35);
+                        let (mon_name, is_dead) = battle.apply_damage(damage);
+                        update_center = true;
+
+                        let mut msg = format!(
+                            "{}に「すてみ」を　命じた！\n{}\n会心の一撃！　{}に {}の 痛恨のダメージ！",
+                            member.name, action_msg, mon_name, damage
+                        );
+
+                        if is_dead {
+                            msg.push_str(&format!("\n{}を　たおした！", mon_name));
+                            battle.next_monster();
+                            let next_mon = battle.current_monster();
+                            msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                        }
+                        new_message = Some(msg);
+                    }
+                    ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                        new_message = Some(format!(
+                            "{}に「すてみ」を　命じた！\n{}\n{}",
+                            member.name, reason_msg, action_msg
+                        ));
+                    }
+                };
             }
-        };
-    }
 
-
-    // [4]: 「観察する（魔術知識＋目星）」
-    if keyboard.just_pressed(KeyCode::Digit4) {
-        let member = &party.members[party.selected_index];
-        let report = diagnose_member(&player.skills, member, &mut rng);
-        let msg = format!("{}\n{}", report.observation_msg, report.conclusion_msg);
-        new_message = Some(msg);
+            // [4]: 「観察する」
+            if keyboard.just_pressed(KeyCode::Digit4) {
+                let member = &party.members[party.selected_index];
+                let report = diagnose_member(&player.skills, member, &mut rng);
+                let msg = format!("{}\n{}", report.observation_msg, report.conclusion_msg);
+                new_message = Some(msg);
+            }
+        }
     }
 
     // ヘッダーUIの更新
     if update_header {
         if let Ok(mut text) = header_query.get_single_mut() {
-            *text = Text::new(format_status_header(&party));
+            *text = Text::new(format_status_header(&party, *mode, &town));
         }
     }
 
-    // モンスターUIの更新
-    if update_monster {
-        if let Ok(mut text) = monster_query.get_single_mut() {
-            *text = Text::new(format_monster_display(battle.current_monster()));
+    // 中央ウィンドウUIの更新
+    if update_center {
+        if let Ok(mut text) = center_query.get_single_mut() {
+            let content = match *mode {
+                AppMode::Town => format_town_display(&town),
+                AppMode::Battle => format_monster_display(battle.current_monster()),
+            };
+            *text = Text::new(content);
         }
     }
 
