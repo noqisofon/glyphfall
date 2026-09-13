@@ -1,0 +1,1 @@
+ここに等幅フォント(.ttf)を配置してください。例: FiraMono-Regular.ttf
