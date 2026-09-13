@@ -60,6 +60,7 @@ cargo run
 - [ADR-0005: 主人公の非英雄性（パンピー）と勇者キャンペーンの分離](docs/adr/0005-commoner-protagonist-and-hero-campaign-split.md)
 - [ADR-0006: Bevy ECS と罫線グリッドによるターミナルUIアーキテクチャ](docs/adr/0006-glyph-grid-terminal-ui-architecture.md)
 - [ADR-0007: グラフィック方針としてピュア・グリフ／ASCIIアート表現の採用](docs/adr/0007-pure-glyph-ascii-graphics.md)
+- [ADR-0008: ハイブリッド移動視点システム（視界制限付き見下ろし × 一人称疑似3D）の採用](docs/adr/0008-hybrid-exploration-perspective.md)
 
 
 
