@@ -25,7 +25,13 @@ cargo run
   - `spawn_message_window(parent, font, inner_cols, inner_rows, message)` で
     サイズと中身を指定するだけで枠が組み上がる
 - 緑モノクロのターミナル配色（`palette` モジュールで一括管理）
-- DQ的な1文字ずつのメッセージ送り演出（`TypewriterMessage` + `typewriter_tick`）
+- DQ的な1文字ずつのメッセージ送り演出（`TypewriterMessage` + `typewriter_tick`、Spaceで即時スキップ）
+- **影響度＆パーティ自律行動システム（ADR-0003）**
+  - 自然上限89の隠しパラメータ `Influence`、外的魔術介入による100超の精神異常
+  - 指示（たたかう／すてみ）に対する対抗判定と不服従・自律行動（遊び人のサボり等）
+  - 「魔術の知識」＋「目星」による精神異常の見抜き／ヤンデレ（素の執着）の判別
+  - 上部ステータス枠、[Tab]仲間切替、[F1]デバッグ用隠し数値可視化トグル
+
 
 ## 次にやりそうなこと（メモ）
 
@@ -48,5 +54,7 @@ cargo run
 - [ADR-0004: 旅シミュレーション型ファストトラベルと創発イベント](docs/adr/0004-travel-simulation-and-emergent-events.md)
 - [ADR-0005: 主人公の非英雄性（パンピー）と勇者キャンペーンの分離](docs/adr/0005-commoner-protagonist-and-hero-campaign-split.md)
 - [ADR-0006: Bevy ECS と罫線グリッドによるターミナルUIアーキテクチャ](docs/adr/0006-glyph-grid-terminal-ui-architecture.md)
+- [ADR-0007: グラフィック方針としてピュア・グリフ／ASCIIアート表現の採用](docs/adr/0007-pure-glyph-ascii-graphics.md)
+
 
 
