@@ -6,10 +6,11 @@
 
 ## セットアップ
 
-1. 等幅フォントを用意する
-   - `assets/fonts/FiraMono-Regular.ttf` に等幅フォントを配置してください
-   - お好みで `Cica`, `HackGen`, `JetBrains Mono` などの日本語対応等幅フォントに差し替え可
-   - `src/main.rs` 内 `FONT_PATH` を変更すればファイル名も変えられます
+1. 等幅フォント
+   - 標準で **Bizin Gothic**（`assets/fonts/BizinGothic-Regular.ttf`）を適用しています。
+   - **Mint Mono**（`assets/fonts/MintMono-Regular.ttf`）も同梱しています。
+   - `src/main.rs` 内 `FONT_PATH` で即座に切り替え可能です。
+   - （その他、HackGen や BIZ UDゴシック も同梱済み）
 
 2. 実行
 

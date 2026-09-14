@@ -34,7 +34,9 @@ mod palette {
     pub const DAMAGE: Color = Color::srgb(1.0, 0.25, 0.25);
 }
 
-const FONT_PATH: &str = "fonts/ZenKakuGothicNew-Regular.ttf";
+// フォント設定（Bizin Gothic / Mint Mono どちらも assets/fonts に配置済み）
+const FONT_PATH: &str = "fonts/BizinGothic-Regular.ttf";
+// const FONT_PATH: &str = "fonts/MintMono-Regular.ttf";
 const CELL_PX: f32 = 18.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
