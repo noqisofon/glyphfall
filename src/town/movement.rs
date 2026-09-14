@@ -136,7 +136,7 @@ pub fn try_move_player(
                 AreaId::DungeonB1F => {
                     MoveOutcome::ChangeArea {
                         new_area: AreaId::Town,
-                        spawn_pos: Position { x: 40, y: 7 },
+                        spawn_pos: Position { x: 40, y: 11 },
                         message: "階段を駆け上がり、夜風が吹き抜ける王都アルカンへ無事に生還した！".into(),
                     }
                 }

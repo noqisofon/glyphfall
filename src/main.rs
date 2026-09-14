@@ -38,9 +38,6 @@ mod palette {
 const FONT_PATH: &str = "fonts/BizinGothic-Regular.ttf";
 // const FONT_PATH: &str = "fonts/MintMono-Regular.ttf";
 const CELL_PX: f32 = 18.0;
-// 中央フィールド（街マップ）表示枠だけを一回り大きくするための専用セルサイズ。
-// 他ウィンドウの文字セル（CELL_PX）には影響しない。
-const FIELD_CELL_PX: f32 = 22.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
 pub enum AppMode {
@@ -96,7 +93,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Glyphfall - Town, Dungeon & Tri-Split Conversation Prototype".into(),
-                resolution: (1120.0_f32, 640.0_f32).into(),
+                resolution: (960.0_f32, 640.0_f32).into(),
                 ..default()
             }),
             ..default()
@@ -429,21 +426,21 @@ fn spawn_status_window(
 
 fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &TownState) {
     let inner_cols = 46;
-    let inner_rows = 9;
+    let inner_rows = 13;
     let outer_cols = inner_cols + 2;
     let outer_rows = inner_rows + 2;
 
     parent
         .spawn(Node {
             display: Display::Grid,
-            grid_template_columns: vec![RepeatedGridTrack::px(outer_cols as u16, FIELD_CELL_PX)],
-            grid_template_rows: vec![RepeatedGridTrack::px(outer_rows as u16, FIELD_CELL_PX)],
+            grid_template_columns: vec![RepeatedGridTrack::px(outer_cols as u16, CELL_PX)],
+            grid_template_rows: vec![RepeatedGridTrack::px(outer_rows as u16, CELL_PX)],
             ..default()
         })
         .with_children(|grid| {
-            spawn_box_border_sized(grid, font.clone(), outer_cols, outer_rows, FIELD_CELL_PX);
+            spawn_box_border(grid, font.clone(), outer_cols, outer_rows);
 
-            // ドット絵街マップ描画ノード（枠の内側 1012×198px に完全フィット）
+            // ドット絵街マップ描画ノード（枠の内側 828×234px に完全フィット）
             grid.spawn((
                 Node {
                     grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
@@ -471,7 +468,7 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
                 Text::new(""),
                 TextFont {
                     font,
-                    font_size: FIELD_CELL_PX * 0.85,
+                    font_size: CELL_PX * 0.85,
                     ..default()
                 },
                 TextColor(palette::TEXT),
@@ -608,16 +605,6 @@ fn spawn_box_border(
     outer_cols: usize,
     outer_rows: usize,
 ) {
-    spawn_box_border_sized(grid, font, outer_cols, outer_rows, CELL_PX);
-}
-
-fn spawn_box_border_sized(
-    grid: &mut ChildBuilder,
-    font: Handle<Font>,
-    outer_cols: usize,
-    outer_rows: usize,
-    cell_px: f32,
-) {
     for row in 0..outer_rows {
         for col in 0..outer_cols {
             let is_top = row == 0;
@@ -649,7 +636,7 @@ fn spawn_box_border_sized(
                     Text::new(c.to_string()),
                     TextFont {
                         font: font.clone(),
-                        font_size: cell_px,
+                        font_size: CELL_PX,
                         ..default()
                     },
                     TextColor(palette::FRAME),
