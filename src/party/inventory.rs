@@ -1,0 +1,85 @@
+use bevy::prelude::*;
+
+#[derive(Resource, Clone, Debug)]
+pub struct PlayerInventory {
+    pub gold: i32,
+    pub items: Vec<String>,
+    pub topics: Vec<String>,
+}
+
+impl Default for PlayerInventory {
+    fn default() -> Self {
+        Self {
+            gold: 100,
+            items: vec!["やくそう".into(), "松明".into()],
+            topics: vec!["王都アルカン".into(), "封魔の迷宮".into()],
+        }
+    }
+}
+
+impl PlayerInventory {
+    pub fn add_gold(&mut self, amount: i32) {
+        self.gold += amount;
+    }
+
+    pub fn spend_gold(&mut self, amount: i32) -> bool {
+        if self.gold >= amount {
+            self.gold -= amount;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn add_item(&mut self, item: impl Into<String>) {
+        self.items.push(item.into());
+    }
+
+    pub fn learn_topic(&mut self, topic: impl Into<String>) -> bool {
+        let topic_str = topic.into();
+        if self.has_topic(&topic_str) {
+            false // 既に記憶済み
+        } else {
+            self.topics.push(topic_str);
+            true
+        }
+    }
+
+    pub fn has_topic(&self, topic: &str) -> bool {
+        self.topics.iter().any(|t| t == topic)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gold_spending() {
+        let mut inv = PlayerInventory::default();
+        assert_eq!(inv.gold, 100);
+
+        assert!(inv.spend_gold(50));
+        assert_eq!(inv.gold, 50);
+
+        assert!(!inv.spend_gold(60)); // 所持金不足
+        assert_eq!(inv.gold, 50);
+
+        inv.add_gold(100);
+        assert_eq!(inv.gold, 150);
+    }
+
+    #[test]
+    fn test_topic_learning() {
+        let mut inv = PlayerInventory::default();
+        assert!(inv.has_topic("王都アルカン"));
+        assert!(!inv.has_topic("封印の祭壇"));
+
+        // 新しい話題を覚える
+        assert!(inv.learn_topic("封印の祭壇"));
+        assert!(inv.has_topic("封印の祭壇"));
+
+        // 二重記憶は false
+        assert!(!inv.learn_topic("封印の祭壇"));
+    }
+}

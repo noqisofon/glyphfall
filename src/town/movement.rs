@@ -1,3 +1,4 @@
+use super::dialogue::DialoguePartner;
 use super::map::{AreaId, TileType, TownMap};
 use std::collections::VecDeque;
 
@@ -60,6 +61,12 @@ pub enum MoveOutcome {
     ChangeArea {
         new_area: AreaId,
         spawn_pos: Position,
+        message: String,
+    },
+    StartDialogue(DialoguePartner),
+    ChestOpened {
+        gold: i32,
+        item: String,
         message: String,
     },
 }
@@ -154,8 +161,10 @@ pub fn try_move_player(
         }
         TileType::ChestClosed => {
             map.set(target_x, target_y, TileType::ChestOpen);
-            MoveOutcome::Blocked {
-                message: Some("宝箱を開けた！\nなんと 120ゴールドと「特やくそう」を手に入れた！".into()),
+            MoveOutcome::ChestOpened {
+                gold: 120,
+                item: "特やくそう".into(),
+                message: "宝箱を開けた！\n120ゴールドと「特やくそう」を手に入れた！".into(),
             }
         }
         TileType::MonsterSymbol => {
@@ -163,27 +172,13 @@ pub fn try_move_player(
                 message: "暗闇から魔物の影が飛びかかってきた！\n不意打ちの戦闘だ！".into(),
             }
         }
-        TileType::Sign => MoveOutcome::Blocked {
-            message: Some("立て看板【王都アルカン・商業区】\n北西: 宿屋[H]・酒場[T]  北東: 道具屋[S]  南東: 封鎖地区".into()),
-        },
-        TileType::Inn => MoveOutcome::Blocked {
-            message: Some("宿屋の主人「旅の方かい？\nあいにく今は旅の一座で満室なんだ。すまないね」".into()),
-        },
-        TileType::Tavern => MoveOutcome::Blocked {
-            message: Some("呑兵衛の冒険者「南東の地下道は近づかねえ方がいいぜ。\n最近夜になると、恐ろしい唸り声が響いてくるんだ…」".into()),
-        },
-        TileType::Shop => MoveOutcome::Blocked {
-            message: Some("道具屋の店主「へいらっしゃい！\n夜歩くなら[L]キーで松明を灯しなよ。暗闇じゃ足元も見えねえぜ」".into()),
-        },
-        TileType::NpcGuard => MoveOutcome::Blocked {
-            message: Some("王都衛兵「止まれ！この先は立ち入り禁止の地下迷宮だ！\n生半可な覚悟で降りれば命はないぞ！」".into()),
-        },
-        TileType::NpcVillager => MoveOutcome::Blocked {
-            message: Some("街の女性「ようこそアルカン王都へ！\n夜は辻斬りが出る噂もあるから、気をつけて歩いてね」".into()),
-        },
-        TileType::NpcSuspicious => MoveOutcome::Blocked {
-            message: Some("裏通りの怪しい男「ヒヒッ…あんたたち、魔物の討伐かい？\n裏の壁に抜け道があるぜ…気をつけな」".into()),
-        },
+        TileType::Sign => MoveOutcome::StartDialogue(DialoguePartner::Sign),
+        TileType::Inn => MoveOutcome::StartDialogue(DialoguePartner::Inn),
+        TileType::Tavern => MoveOutcome::StartDialogue(DialoguePartner::Tavern),
+        TileType::Shop => MoveOutcome::StartDialogue(DialoguePartner::Shop),
+        TileType::NpcGuard => MoveOutcome::StartDialogue(DialoguePartner::Guard),
+        TileType::NpcVillager => MoveOutcome::StartDialogue(DialoguePartner::Villager),
+        TileType::NpcSuspicious => MoveOutcome::StartDialogue(DialoguePartner::Suspicious),
         TileType::Wall => MoveOutcome::Blocked {
             message: Some("頑丈な石壁だ。進むことはできない。".into()),
         },
@@ -334,7 +329,7 @@ mod tests {
             -1,
         );
 
-        assert!(matches!(outcome, MoveOutcome::Blocked { .. }));
+        assert!(matches!(outcome, MoveOutcome::ChestOpened { .. }));
         assert_eq!(map.get(5, 4), Some(TileType::ChestOpen));
     }
 }

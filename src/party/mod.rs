@@ -1,9 +1,11 @@
 pub mod action;
 pub mod diagnosis;
 pub mod influence;
+pub mod inventory;
 
 pub use action::{evaluate_command, ActionOutcome, PartyCommand};
 pub use diagnosis::{diagnose_member, PlayerSkills};
+pub use inventory::PlayerInventory;
 #[allow(unused_imports)]
 pub use influence::{Influence, MentalState, PartyMember, Personality, MAX_NATURAL_INFLUENCE};
 

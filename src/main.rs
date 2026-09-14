@@ -8,9 +8,9 @@ mod town;
 use battle::{create_default_monsters, BattleState, Monster};
 use party::{
     diagnose_member, evaluate_command, ActionOutcome, Influence, MentalState, PartyCommand,
-    PartyMember, Personality, PlayerSkills,
+    PartyMember, Personality, PlayerInventory, PlayerSkills,
 };
-use town::{MoveOutcome, TownState};
+use town::{DialoguePartner, DialogueSession, MoveOutcome, TownState, SHOP_ITEMS};
 
 // ─────────────────────────────────────────────
 // 罫線文字セット（単線）
@@ -42,6 +42,9 @@ const CELL_PX: f32 = 18.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
 pub enum AppMode {
     Town,
+    Dialogue,
+    Shop,
+    Inn,
     Battle,
 }
 
@@ -52,8 +55,14 @@ struct TypewriterMessage {
     timer: Timer,
 }
 
+#[derive(Component, Default)]
+struct LeftWindowTextNode;
+
 #[derive(Component)]
 struct MessageTextNode;
+
+#[derive(Component, Default)]
+struct RightWindowTextNode;
 
 #[derive(Component)]
 struct StatusHeaderNode;
@@ -76,11 +85,14 @@ struct PlayerResource {
     skills: PlayerSkills,
 }
 
+#[derive(Resource, Default)]
+struct ActiveDialogue(pub Option<DialogueSession>);
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Glyphfall - 2D Pixel Art Town & Battle Prototype".into(),
+                title: "Glyphfall - Town, Dungeon & Tri-Split Conversation Prototype".into(),
                 resolution: (960.0_f32, 640.0_f32).into(),
                 ..default()
             }),
@@ -88,6 +100,8 @@ fn main() {
         }))
         .insert_resource(ClearColor(palette::BG))
         .insert_resource(AppMode::Town)
+        .insert_resource(PlayerInventory::default())
+        .insert_resource(ActiveDialogue::default())
         .insert_resource(PlayerResource {
             skills: PlayerSkills {
                 magic_knowledge: 45,
@@ -147,7 +161,8 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     party: Res<PartyState>,
-    mode: Res<AppMode>,
+    town_mode: Res<AppMode>,
+    inv: Res<PlayerInventory>,
 ) {
     let font = asset_server.load(FONT_PATH);
     let town = TownState::new(&mut images);
@@ -159,31 +174,38 @@ fn setup(
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
             flex_direction: FlexDirection::Column,
-            justify_content: JustifyContent::SpaceBetween,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            row_gap: Val::Px(8.0),
             padding: UiRect::all(Val::Px(16.0)),
             ..default()
         })
         .with_children(|root| {
-            // 上部：ステータス＆操作ガイドウィンドウ (行数 4)
-            spawn_status_window(root, font.clone(), &party, *mode, &town);
+            // 上部：ステータス＆操作ガイドウィンドウ (4行)
+            spawn_status_window(root, font.clone(), &party, *town_mode, &town, &inv);
 
-            // 中央：ドット絵街マップ or 敵モンスターのウィンドウ (行数 9)
+            // 中央：ドット絵街マップ or 敵モンスターのウィンドウ (9行)
             spawn_center_window(root, font.clone(), &town);
 
-            // 下部：メッセージウィンドウ (行数 5)
-            spawn_message_window(
+            // 下部：ADR-0002準拠 三分割ウィンドウ（左：話題/商品 13列, 中：メッセージ 20列, 右：行動 9列）
+            spawn_tri_split_window(
                 root,
                 font.clone(),
-                46,
-                5,
-                "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[WASD]で移動し仲間と街を探索しよう。\n[L]松明切替 | [B]地下迷宮(戦闘) | [Tab]仲間切替",
+                &inv,
+                "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。住人やお店に接触すると会話・取引ができます。",
             );
         });
 
     commands.insert_resource(town);
 }
 
-fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> String {
+fn format_status_header(
+    party: &PartyState,
+    mode: AppMode,
+    town: &TownState,
+    inv: &PlayerInventory,
+    dialogue: &Option<DialogueSession>,
+) -> String {
     let member = &party.members[party.selected_index];
     let mut header = format!(
         "▼ 注目中の仲間 [No.{}/{}]: {} ({})  HP: {}/{}  MP: {}/{}\n",
@@ -219,13 +241,33 @@ fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> 
             member.influence.raw_value, abnormal_str, mental_str, personality_str, town.debug_see_all
         ));
     } else {
+        let torch_str = if town.torch_active { "点灯中(半径6)" } else { "消灯(半径2)" };
         match mode {
             AppMode::Town => {
-                let torch_str = if town.torch_active { "点灯中(半径6)" } else { "消灯(半径2)" };
                 header.push_str(&format!(
-                    "  [{}] 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫) 騎士(白)\n",
+                    "  [{}] 所持金: {}G | 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫) 騎士(白)\n",
                     town.current_area.name(),
+                    inv.gold,
                     torch_str
+                ));
+            }
+            AppMode::Dialogue => {
+                let partner_name = dialogue.as_ref().map(|s| s.partner.name()).unwrap_or("相手");
+                header.push_str(&format!(
+                    "  [会話中: {}] 所持金: {}G | [W/S]で話題選択 | [1]たずねる | [2]おぼえる | [3]はなれる\n",
+                    partner_name, inv.gold
+                ));
+            }
+            AppMode::Shop => {
+                header.push_str(&format!(
+                    "  [道具屋・取引中: 道具屋の店主] 所持金: {}G | [W/S]で商品選択 | [1]購入 | [3]店を出る\n",
+                    inv.gold
+                ));
+            }
+            AppMode::Inn => {
+                header.push_str(&format!(
+                    "  [宿屋・受付: 宿屋の主人] 所持金: {}G | [1]宿泊(50G)で全快 | [3]宿を出る\n",
+                    inv.gold
                 ));
             }
             AppMode::Battle => {
@@ -236,7 +278,16 @@ fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> 
 
     match mode {
         AppMode::Town => {
-            header.push_str("操作: [WASD]移動 | [L]松明切替 | [B]地下迷宮(戦闘) | [Tab]仲間切替 | [Space]スキップ");
+            header.push_str("操作: [WASD]移動 | [L]松明切替 | [B]戦闘切替 | [Tab]仲間切替 | [Space]スキップ");
+        }
+        AppMode::Dialogue => {
+            header.push_str("操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる");
+        }
+        AppMode::Shop => {
+            header.push_str("操作: [W/S]商品選択 | [1/Enter]かう | [3/Esc]店を出る");
+        }
+        AppMode::Inn => {
+            header.push_str("操作: [1/Enter]とまる(50G) | [3/Esc]やめる");
         }
         AppMode::Battle => {
             header.push_str("操作: [1]たたかう | [2]みをまもる | [3]すてみ | [4]観察 | [N]敵切替 | [B]街へ帰還");
@@ -244,6 +295,75 @@ fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> 
     }
 
     header
+}
+
+fn format_left_window(
+    mode: AppMode,
+    inv: &PlayerInventory,
+    dialogue: &Option<DialogueSession>,
+) -> String {
+    match mode {
+        AppMode::Dialogue => {
+            let session = dialogue.as_ref();
+            let selected = session.map(|s| s.selected_topic_index).unwrap_or(0);
+            let mut out = "【話題を振る】\n".to_string();
+            for (idx, topic) in inv.topics.iter().enumerate().take(4) {
+                let cursor = if idx == selected { "▶" } else { " " };
+                out.push_str(&format!("{} {}\n", cursor, topic));
+            }
+            out
+        }
+        AppMode::Shop => {
+            let session = dialogue.as_ref();
+            let selected = session.map(|s| s.selected_shop_index).unwrap_or(0);
+            let mut out = format!("【品物】(金:{}G)\n", inv.gold);
+            for (idx, item) in SHOP_ITEMS.iter().enumerate() {
+                let cursor = if idx == selected { "▶" } else { " " };
+                out.push_str(&format!("{}{} {:2}G\n", cursor, item.name, item.price));
+            }
+            out
+        }
+        AppMode::Inn => {
+            format!(
+                "【宿屋・宿泊】\n一泊料金: 50G\n所持金  : {}G\n全員のHP/MP全快",
+                inv.gold
+            )
+        }
+        AppMode::Town => {
+            let mut out = format!("【手帳】金:{}G\n[覚えた話題]\n", inv.gold);
+            for topic in inv.topics.iter().take(3) {
+                out.push_str(&format!("・{}\n", topic));
+            }
+            out
+        }
+        AppMode::Battle => {
+            format!(
+                "【所持アイテム】\n・やくそう\n・特やくそう\n所持金: {}G",
+                inv.gold
+            )
+        }
+    }
+}
+
+fn format_right_window(mode: AppMode, dialogue: &Option<DialogueSession>) -> String {
+    match mode {
+        AppMode::Dialogue => {
+            let has_learnable = dialogue
+                .as_ref()
+                .and_then(|s| s.learnable_topic.as_ref())
+                .is_some();
+            let learn_str = if has_learnable {
+                "[2]おぼえる★"
+            } else {
+                "[2]おぼえる"
+            };
+            format!("[1]たずねる\n{}\n[3]はなれる\n(W/S:選択)", learn_str)
+        }
+        AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
+        AppMode::Inn => "[1]とまる(50G)\n[3]やめる\n\n(HP/MP全回復)".into(),
+        AppMode::Town => "[探索操作]\nWASD:移動\nL   :松明\nTab :仲間\nB   :戦闘".into(),
+        AppMode::Battle => "[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]観察\n[B]街へ帰還".into(),
+    }
 }
 
 fn format_hp_bar(hp: i32, max_hp: i32, length: usize) -> String {
@@ -268,6 +388,7 @@ fn spawn_status_window(
     party: &PartyState,
     mode: AppMode,
     town: &TownState,
+    inv: &PlayerInventory,
 ) {
     let inner_cols = 46;
     let inner_rows = 4;
@@ -279,7 +400,6 @@ fn spawn_status_window(
             display: Display::Grid,
             grid_template_columns: vec![RepeatedGridTrack::px(outer_cols as u16, CELL_PX)],
             grid_template_rows: vec![RepeatedGridTrack::px(outer_rows as u16, CELL_PX)],
-            margin: UiRect::bottom(Val::Px(4.0)),
             ..default()
         })
         .with_children(|grid| {
@@ -292,7 +412,7 @@ fn spawn_status_window(
                     padding: UiRect::all(Val::Px(4.0)),
                     ..default()
                 },
-                Text::new(format_status_header(party, mode, town)),
+                Text::new(format_status_header(party, mode, town, inv, &None)),
                 TextFont {
                     font,
                     font_size: CELL_PX * 0.82,
@@ -315,21 +435,18 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
             display: Display::Grid,
             grid_template_columns: vec![RepeatedGridTrack::px(outer_cols as u16, CELL_PX)],
             grid_template_rows: vec![RepeatedGridTrack::px(outer_rows as u16, CELL_PX)],
-            margin: UiRect::vertical(Val::Px(4.0)),
             ..default()
         })
         .with_children(|grid| {
             spawn_box_border(grid, font.clone(), outer_cols, outer_rows);
 
-            // ドット絵街マップ描画ノード（736×144px）
+            // ドット絵街マップ描画ノード（枠の内側 828×162px に完全フィット）
             grid.spawn((
                 Node {
                     grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
                     grid_row: GridPlacement::start_span(2, outer_rows as u16 - 2),
-                    width: Val::Px(736.0),
-                    height: Val::Px(144.0),
-                    align_self: AlignSelf::Center,
-                    justify_self: JustifySelf::Center,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     display: Display::Flex,
                     ..default()
                 },
@@ -360,7 +477,85 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
         });
 }
 
-fn spawn_message_window(
+fn spawn_tri_split_window(
+    parent: &mut ChildBuilder,
+    font: Handle<Font>,
+    inv: &PlayerInventory,
+    default_msg: &str,
+) {
+    let total_width = (15 + 22 + 11) as f32 * CELL_PX; // 48列 = 864.0 px
+
+    parent
+        .spawn(Node {
+            width: Val::Px(total_width),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::FlexStart,
+            ..default()
+        })
+        .with_children(|row| {
+            // 左ウィンドウ: 13列 + 枠2列 = 15列 (270px)
+            spawn_sub_window::<LeftWindowTextNode>(
+                row,
+                font.clone(),
+                13,
+                5,
+                &format_left_window(AppMode::Town, inv, &None),
+            );
+
+            // 中央メッセージウィンドウ: 20列 + 枠2列 = 22列 (396px)
+            spawn_sub_message_window(row, font.clone(), 20, 5, default_msg);
+
+            // 右行動ウィンドウ: 9列 + 枠2列 = 11列 (198px)
+            spawn_sub_window::<RightWindowTextNode>(
+                row,
+                font.clone(),
+                9,
+                5,
+                &format_right_window(AppMode::Town, &None),
+            );
+        });
+}
+
+fn spawn_sub_window<M: Component + Default>(
+    parent: &mut ChildBuilder,
+    font: Handle<Font>,
+    inner_cols: usize,
+    inner_rows: usize,
+    initial_text: &str,
+) {
+    let outer_cols = inner_cols + 2;
+    let outer_rows = inner_rows + 2;
+
+    parent
+        .spawn(Node {
+            display: Display::Grid,
+            grid_template_columns: vec![RepeatedGridTrack::px(outer_cols as u16, CELL_PX)],
+            grid_template_rows: vec![RepeatedGridTrack::px(outer_rows as u16, CELL_PX)],
+            ..default()
+        })
+        .with_children(|grid| {
+            spawn_box_border(grid, font.clone(), outer_cols, outer_rows);
+
+            grid.spawn((
+                Node {
+                    grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
+                    grid_row: GridPlacement::start_span(2, outer_rows as u16 - 2),
+                    padding: UiRect::all(Val::Px(4.0)),
+                    ..default()
+                },
+                Text::new(initial_text),
+                TextFont {
+                    font,
+                    font_size: CELL_PX * 0.82,
+                    ..default()
+                },
+                TextColor(palette::TEXT),
+                M::default(),
+            ));
+        });
+}
+
+fn spawn_sub_message_window(
     parent: &mut ChildBuilder,
     font: Handle<Font>,
     inner_cols: usize,
@@ -375,7 +570,6 @@ fn spawn_message_window(
             display: Display::Grid,
             grid_template_columns: vec![RepeatedGridTrack::px(outer_cols as u16, CELL_PX)],
             grid_template_rows: vec![RepeatedGridTrack::px(outer_rows as u16, CELL_PX)],
-            margin: UiRect::top(Val::Px(4.0)),
             ..default()
         })
         .with_children(|grid| {
@@ -399,7 +593,7 @@ fn spawn_message_window(
                 TypewriterMessage {
                     full_text: message.to_string(),
                     shown_chars: 0,
-                    timer: Timer::from_seconds(0.025, TimerMode::Repeating),
+                    timer: Timer::from_seconds(0.02, TimerMode::Repeating),
                 },
             ));
         });
@@ -496,10 +690,14 @@ fn handle_input(
     mut town: ResMut<TownState>,
     mut images: ResMut<Assets<Image>>,
     mut party: ResMut<PartyState>,
+    mut inv: ResMut<PlayerInventory>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
     mut battle: ResMut<BattleState>,
     player: Res<PlayerResource>,
-    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<BattleMonsterTextNode>)>,
-    mut battle_monster_query: Query<(&mut Text, &mut Node), (With<BattleMonsterTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<TownMapImageNode>)>,
+    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<BattleMonsterTextNode>, Without<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
+    mut left_window_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<BattleMonsterTextNode>, Without<RightWindowTextNode>)>,
+    mut right_window_query: Query<&mut Text, (With<RightWindowTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<BattleMonsterTextNode>, Without<LeftWindowTextNode>)>,
+    mut battle_monster_query: Query<(&mut Text, &mut Node), (With<BattleMonsterTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<TownMapImageNode>, Without<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
     mut town_image_query: Query<&mut Node, (With<TownMapImageNode>, Without<BattleMonsterTextNode>)>,
     mut message_query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
 ) {
@@ -508,6 +706,7 @@ fn handle_input(
     let mut update_header = false;
     let mut mode_changed = false;
     let mut update_monster_display = false;
+    let mut update_tri_windows = false;
 
     // [Space]: タイプライターの文字送りをスキップ
     if keyboard.just_pressed(KeyCode::Space) {
@@ -536,18 +735,20 @@ fn handle_input(
     // [B]: モード切替（街探索 ↔ 戦闘テスト）
     if keyboard.just_pressed(KeyCode::KeyB) {
         *mode = match *mode {
-            AppMode::Town => {
-                new_message = Some("地下迷宮の魔物とエンカウントした！\n[1]たたかう や [2]みをまもる で指示を出そう。[B]で街へ戻る。".into());
-                AppMode::Battle
-            }
             AppMode::Battle => {
                 new_message = Some("王都アルカンの街並みへ生還した。\n[WASD]で街を歩き回れる。".into());
                 AppMode::Town
             }
+            _ => {
+                new_message = Some("地下迷宮の魔物とエンカウントした！\n[1]たたかう や [2]みをまもる で指示を出そう。[B]で街へ戻る。".into());
+                AppMode::Battle
+            }
         };
+        dialogue_res.0 = None;
         update_header = true;
         mode_changed = true;
         update_monster_display = true;
+        update_tri_windows = true;
     }
 
     match *mode {
@@ -596,15 +797,158 @@ fn handle_input(
                     MoveOutcome::TriggerBattle { message } => {
                         new_message = Some(message);
                         *mode = AppMode::Battle;
+                        dialogue_res.0 = None;
                         mode_changed = true;
                         update_header = true;
                         update_monster_display = true;
+                        update_tri_windows = true;
                     }
                     MoveOutcome::ChangeArea { message, .. } => {
                         new_message = Some(message);
                         update_header = true;
                     }
+                    MoveOutcome::ChestOpened { gold, item, message } => {
+                        inv.add_gold(gold);
+                        inv.add_item(&item);
+                        new_message = Some(message);
+                        update_header = true;
+                        update_tri_windows = true;
+                    }
+                    MoveOutcome::StartDialogue(partner) => {
+                        let session = DialogueSession::start(partner);
+                        new_message = Some(session.current_text.clone());
+                        *mode = match partner {
+                            DialoguePartner::Shop => AppMode::Shop,
+                            DialoguePartner::Inn => AppMode::Inn,
+                            _ => AppMode::Dialogue,
+                        };
+                        dialogue_res.0 = Some(session);
+                        mode_changed = true;
+                        update_header = true;
+                        update_tri_windows = true;
+                    }
                 }
+            }
+        }
+        AppMode::Dialogue => {
+            // [W/S]: 話題選択
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.selected_topic_index = session.selected_topic_index.saturating_sub(1);
+                    update_tri_windows = true;
+                }
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let max_idx = inv.topics.len().saturating_sub(1);
+                    if session.selected_topic_index < max_idx {
+                        session.selected_topic_index += 1;
+                        update_tri_windows = true;
+                    }
+                }
+            }
+
+            // [1] / [Enter]: 話題を振る
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if let Some(topic) = inv.topics.get(session.selected_topic_index).cloned() {
+                        session.ask_topic(&topic);
+                        new_message = Some(session.current_text.clone());
+                        update_tri_windows = true;
+                    }
+                }
+            }
+
+            // [2]: 「おぼえる」キーワードを手帳にストック
+            if keyboard.just_pressed(KeyCode::Digit2) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if let Some(new_topic) = session.learnable_topic.take() {
+                        let learned = inv.learn_topic(&new_topic);
+                        if learned {
+                            new_message = Some(format!(
+                                "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                new_topic
+                            ));
+                        } else {
+                            new_message = Some(format!("【{}】は既に覚えている。", new_topic));
+                        }
+                        update_tri_windows = true;
+                    } else {
+                        new_message = Some("新しく覚えられるキーワードは見当たらない。".into());
+                    }
+                }
+            }
+
+            // [3] / [Esc]: 会話を終える
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                dialogue_res.0 = None;
+                *mode = AppMode::Town;
+                new_message = Some("会話を終えて、再び歩き出した。".into());
+                mode_changed = true;
+                update_header = true;
+                update_tri_windows = true;
+            }
+        }
+        AppMode::Shop => {
+            // [W/S]: 商品選択
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.selected_shop_index = session.selected_shop_index.saturating_sub(1);
+                    let item = &SHOP_ITEMS[session.selected_shop_index];
+                    new_message = Some(format!("【{}】({}G)\n{}", item.name, item.price, item.description));
+                    update_tri_windows = true;
+                }
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if session.selected_shop_index + 1 < SHOP_ITEMS.len() {
+                        session.selected_shop_index += 1;
+                        let item = &SHOP_ITEMS[session.selected_shop_index];
+                        new_message = Some(format!("【{}】({}G)\n{}", item.name, item.price, item.description));
+                        update_tri_windows = true;
+                    }
+                }
+            }
+
+            // [1] / [Enter]: 商品購入
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.buy_item(&mut inv);
+                    new_message = Some(session.current_text.clone());
+                    update_header = true;
+                    update_tri_windows = true;
+                }
+            }
+
+            // [3] / [Esc]: 店を出る
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                dialogue_res.0 = None;
+                *mode = AppMode::Town;
+                new_message = Some("道具屋を出た。".into());
+                mode_changed = true;
+                update_header = true;
+                update_tri_windows = true;
+            }
+        }
+        AppMode::Inn => {
+            // [1] / [Enter]: 宿泊
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.rest_at_inn(&mut inv, &mut party.members);
+                    new_message = Some(session.current_text.clone());
+                    update_header = true;
+                    update_tri_windows = true;
+                }
+            }
+
+            // [3] / [Esc]: 宿を出る
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                dialogue_res.0 = None;
+                *mode = AppMode::Town;
+                new_message = Some("宿屋を出た。".into());
+                mode_changed = true;
+                update_header = true;
+                update_tri_windows = true;
             }
         }
         AppMode::Battle => {
@@ -729,18 +1073,18 @@ fn handle_input(
     // テクスチャの更新（移動やFOV変化があった場合）
     town.update_texture(&mut images);
 
-    // モード切替に伴うノード表示・非表示の更新
+    // モード切替に伴う中央ノード表示・非表示の更新
     if mode_changed {
         if let Ok(mut town_node) = town_image_query.get_single_mut() {
             town_node.display = match *mode {
-                AppMode::Town => Display::Flex,
                 AppMode::Battle => Display::None,
+                _ => Display::Flex,
             };
         }
         if let Ok((_, mut battle_node)) = battle_monster_query.get_single_mut() {
             battle_node.display = match *mode {
-                AppMode::Town => Display::None,
                 AppMode::Battle => Display::Flex,
+                _ => Display::None,
             };
         }
     }
@@ -752,10 +1096,20 @@ fn handle_input(
         }
     }
 
+    // 三分割ウィンドウ（左・右）の更新
+    if update_tri_windows {
+        if let Ok(mut text) = left_window_query.get_single_mut() {
+            *text = Text::new(format_left_window(*mode, &inv, &dialogue_res.0));
+        }
+        if let Ok(mut text) = right_window_query.get_single_mut() {
+            *text = Text::new(format_right_window(*mode, &dialogue_res.0));
+        }
+    }
+
     // ヘッダーUIの更新
     if update_header {
         if let Ok(mut text) = header_query.get_single_mut() {
-            *text = Text::new(format_status_header(&party, *mode, &town));
+            *text = Text::new(format_status_header(&party, *mode, &town, &inv, &dialogue_res.0));
         }
     }
 

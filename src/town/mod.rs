@@ -1,8 +1,10 @@
+pub mod dialogue;
 pub mod fov;
 pub mod map;
 pub mod movement;
 pub mod pixel_art;
 
+pub use dialogue::{DialoguePartner, DialogueSession, SHOP_ITEMS};
 pub use map::AreaId;
 pub use movement::{try_move_player, MoveOutcome};
 
