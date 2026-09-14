@@ -1,6 +1,6 @@
 # ADR-0008: ハイブリッド移動視点システム（視界制限付き見下ろし × 一人称疑似3D）の採用
 
-- Status: Accepted
+- Status: Superseded by [ADR-0010](0010-unified-top-down-exploration.md)
 - Date: 2026-09-13
 
 ## Background

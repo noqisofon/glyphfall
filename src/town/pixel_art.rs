@@ -652,6 +652,247 @@ fn get_knight_pixels() -> [Pixel; 256] {
     )
 }
 
+fn get_dungeon_wall_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "bbbbbbbbbbbbbbbb",
+            "bDDDDDDDDDDDDDDb",
+            "bDDMMDDDDDDDDDDb",
+            "bDDMMDDDDMDDDDDb",
+            "b.......DDMDDDDb",
+            "bDDDDDD...DDDDDb",
+            "bDDDDDDDD.DDDDDb",
+            "bDDDDDDDD.DDDDDb",
+            "b.......DDDDDDDb",
+            "bDDDDDD...DDDDDb",
+            "bDDDDDDDD.DDMDDb",
+            "bDDMMDDDD.DDMDDb",
+            "bDDMMDDDD......b",
+            "bDDDDDDDDDDDDDDb",
+            "bDDDDDDDDDDDDDDb",
+            "bbbbbbbbbbbbbbbb",
+        ],
+        |ch| match ch {
+            'D' => [50, 55, 68, 255],
+            'M' => [35, 90, 45, 255],
+            '.' => [20, 22, 28, 255],
+            'b' => colors::BLACK,
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_dungeon_floor_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "................",
+            ".DDDDDD..DDDDDD.",
+            ".DDDDDD..DDDDDD.",
+            ".DD..DD..DD..DD.",
+            "................",
+            "...DDDDDD..DDDD.",
+            "...DDDDDD..DDDD.",
+            "...DD..DD..DD.D.",
+            "................",
+            ".DDDD..DDDDDD...",
+            ".DDDD..DDDDDD...",
+            ".D..D..DD..DD...",
+            "................",
+            "....DDDDDD..DDDD",
+            "....DDDDDD..DDDD",
+            "................",
+        ],
+        |ch| match ch {
+            'D' => [40, 45, 55, 255],
+            '.' => [22, 25, 32, 255],
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_iron_gate_closed_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "################",
+            "#b.b.b.b.b.b.b.#",
+            "#S.S.S.S.S.S.S.#",
+            "#S.S.S.S.S.S.S.#",
+            "#SSSSSSSSSSSSSS#",
+            "#S.S.S.S.S.S.S.#",
+            "#S.S.S.S.S.S.S.#",
+            "#S.S.S.S.S.S.S.#",
+            "#SSSSSSSSSSSSSS#",
+            "#S.S.S.S.S.S.S.#",
+            "#S.S.S.S.S.S.S.#",
+            "#S.S.S.S.S.S.S.#",
+            "#SSSSSSSSSSSSSS#",
+            "#S.S.S.S.S.S.S.#",
+            "#b.b.b.b.b.b.b.#",
+            "################",
+        ],
+        |ch| match ch {
+            '#' => colors::BLACK,
+            'S' => [120, 125, 135, 255],
+            'b' => [60, 65, 75, 255],
+            '.' => [22, 25, 32, 255],
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_iron_gate_open_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "################",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "#S............S#",
+            "################",
+        ],
+        |ch| match ch {
+            '#' => colors::BLACK,
+            'S' => [120, 125, 135, 255],
+            '.' => [22, 25, 32, 255],
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_chest_closed_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "................",
+            "....bbbbbbbb....",
+            "...bYYYYYYYYb...",
+            "..bYBBBBBBBBYb..",
+            "..bYBBBBBBBBYb..",
+            "..bYYYYYYYYYYb..",
+            "..bYBBBYYBBBYb..",
+            "..bYBBBYYBBBYb..",
+            "..bYBBBYkBBBYb..",
+            "..bYBBBYYBBBYb..",
+            "..bYYYYYYYYYYb..",
+            "..bYBBBBBBBBYb..",
+            "..bYYYYYYYYYYb..",
+            "...bbbbbbbbbb...",
+            "................",
+            "................",
+        ],
+        |ch| match ch {
+            'b' => colors::BLACK,
+            'Y' => colors::GOLD,
+            'B' => colors::BROWN,
+            'k' => colors::BLACK,
+            '.' => [22, 25, 32, 255],
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_chest_open_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "...bYYYYYYYYb...",
+            "..bYBBBBBBBBYb..",
+            "..bYYYYYYYYYYb..",
+            "....bbbbbbbb....",
+            "..b..........b..",
+            "..b.bbbbbbbb.b..",
+            "..b.b......b.b..",
+            "..b.b......b.b..",
+            "..b.bbbbbbbb.b..",
+            "..bYBBBYYBBBYb..",
+            "..bYYYYYYYYYYb..",
+            "..bYBBBBBBBBYb..",
+            "..bYYYYYYYYYYb..",
+            "...bbbbbbbbbb...",
+            "................",
+            "................",
+        ],
+        |ch| match ch {
+            'b' => colors::BLACK,
+            'Y' => colors::GOLD,
+            'B' => colors::DARK_BROWN,
+            '.' => [22, 25, 32, 255],
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_stairs_up_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "################",
+            "#bWWWWWWWWWWWWb#",
+            "#bWWWWWWWWWWWWb#",
+            "#bWWWWWWWWWWWWb#",
+            "#bggggggggggggb#",
+            "#bggggggggggggb#",
+            "#bGGGGGGGGGGGGb#",
+            "#bGGGGGGGGGGGGb#",
+            "#bDDDDDDDDDDDDb#",
+            "#bDDDDDDDDDDDDb#",
+            "#b............b#",
+            "#b............b#",
+            "#bbbbbbbbbbbbbb#",
+            "#bbbbbbbbbbbbbb#",
+            "#bbbbbbbbbbbbbb#",
+            "################",
+        ],
+        |ch| match ch {
+            '#' => colors::BLACK,
+            'W' => [255, 255, 230, 255],
+            'g' => colors::WHITE,
+            'G' => colors::LIGHT_GRAY,
+            'D' => colors::GRAY,
+            '.' => colors::DARK_GRAY,
+            'b' => colors::BLACK,
+            _ => colors::BLACK,
+        },
+    )
+}
+
+fn get_monster_symbol_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "................",
+            "....bb....bb....",
+            "...bbbb..bbbb...",
+            "...bbbbbbbbbb...",
+            "..bbbbbbbbbbbb..",
+            "..bb.RR..RR.bb..",
+            "..bb.RR..RR.bb..",
+            "..bbbbbbbbbbbb..",
+            "...bbbbWWbbbb...",
+            "....bbWWWWbb....",
+            "...bbbbbbbbbb...",
+            "..bbbbbbbbbbbb..",
+            "..bb..bbbb..bb..",
+            "......bbbb......",
+            "................",
+            "................",
+        ],
+        |ch| match ch {
+            'b' => [45, 18, 55, 255],
+            'R' => colors::RED,
+            'W' => colors::WHITE,
+            '.' => [22, 25, 32, 255],
+            _ => colors::BLACK,
+        },
+    )
+}
+
 // ─────────────────────────────────────────────
 // タイル＆スプライトの合成レンダリング
 // ─────────────────────────────────────────────
@@ -672,6 +913,14 @@ fn get_tile_pixels(tile: TileType) -> [Pixel; 256] {
         TileType::NpcGuard => get_npc_guard_pixels(),
         TileType::NpcVillager => get_npc_villager_pixels(),
         TileType::NpcSuspicious => get_npc_suspicious_pixels(),
+        TileType::DungeonWall => get_dungeon_wall_pixels(),
+        TileType::DungeonFloor => get_dungeon_floor_pixels(),
+        TileType::IronGateClosed => get_iron_gate_closed_pixels(),
+        TileType::IronGateOpen => get_iron_gate_open_pixels(),
+        TileType::ChestClosed => get_chest_closed_pixels(),
+        TileType::ChestOpen => get_chest_open_pixels(),
+        TileType::StairsUp => get_stairs_up_pixels(),
+        TileType::MonsterSymbol => get_monster_symbol_pixels(),
     }
 }
 

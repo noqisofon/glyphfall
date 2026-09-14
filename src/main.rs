@@ -223,7 +223,8 @@ fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> 
             AppMode::Town => {
                 let torch_str = if town.torch_active { "点灯中(半径6)" } else { "消灯(半径2)" };
                 header.push_str(&format!(
-                    "  [王都アルカン・商業区] 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫) 騎士(白)\n",
+                    "  [{}] 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫) 騎士(白)\n",
+                    town.current_area.name(),
                     torch_str
                 ));
             }
@@ -598,6 +599,10 @@ fn handle_input(
                         mode_changed = true;
                         update_header = true;
                         update_monster_display = true;
+                    }
+                    MoveOutcome::ChangeArea { message, .. } => {
+                        new_message = Some(message);
+                        update_header = true;
                     }
                 }
             }

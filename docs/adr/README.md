@@ -14,8 +14,9 @@
 | [ADR-0005](0005-commoner-protagonist-and-hero-campaign-split.md) | 主人公の非英雄性（パンピー）と勇者キャンペーンの分離 | Accepted | 2026-09-13 |
 | [ADR-0006](0006-glyph-grid-terminal-ui-architecture.md) | Bevy ECS と罫線グリッドによるターミナルUIアーキテクチャ | Accepted | 2026-09-13 |
 | [ADR-0007](0007-pure-glyph-ascii-graphics.md) | グラフィック方針としてピュア・グリフ／ASCIIアート表現の採用 | Superseded | 2026-09-13 |
-| [ADR-0008](0008-hybrid-exploration-perspective.md) | ハイブリッド移動視点システム（視界制限付き見下ろし × 一人称疑似3D）の採用 | Accepted | 2026-09-13 |
+| [ADR-0008](0008-hybrid-exploration-perspective.md) | ハイブリッド移動視点システム（視界制限付き見下ろし × 一人称疑似3D）の採用 | Superseded | 2026-09-13 |
 | [ADR-0009](0009-retro-2d-sprite-graphics.md) | レトロ2Dドット絵／スプライト・ハイブリッドの採用 | Accepted | 2026-09-14 |
+| [ADR-0010](0010-unified-top-down-exploration.md) | 統一見下ろし視点探索システムとダンジョン2Dドット絵化の採用 | Accepted | 2026-09-14 |
 
  
 ## フォーマットについて

@@ -3,6 +3,7 @@ pub mod map;
 pub mod movement;
 pub mod pixel_art;
 
+pub use map::AreaId;
 pub use movement::{try_move_player, MoveOutcome};
 
 use bevy::prelude::*;
@@ -15,6 +16,7 @@ use pixel_art::{render_town_to_texture, TEXTURE_HEIGHT, TEXTURE_WIDTH};
 
 #[derive(Resource)]
 pub struct TownState {
+    pub current_area: AreaId,
     pub map: TownMap,
     pub fov: FovMap,
     pub player_pos: Position,
@@ -28,6 +30,7 @@ pub struct TownState {
 
 impl TownState {
     pub fn new(images: &mut Assets<Image>) -> Self {
+        let current_area = AreaId::Town;
         let map = TownMap::create_arkan_capital();
         let fov = FovMap::new(map.width, map.height);
         let player_pos = Position { x: 20, y: 5 }; // 中央広場下
@@ -36,6 +39,7 @@ impl TownState {
         let mut buffer = vec![0u8; TEXTURE_WIDTH * TEXTURE_HEIGHT * 4];
 
         let mut state = Self {
+            current_area,
             map,
             fov,
             player_pos,
@@ -85,15 +89,43 @@ impl TownState {
         self.dirty = true;
     }
 
+    pub fn switch_area(&mut self, new_area: AreaId, spawn_pos: Position) {
+        self.current_area = new_area;
+        self.map = match new_area {
+            AreaId::Town => TownMap::create_arkan_capital(),
+            AreaId::DungeonB1F => TownMap::create_dungeon_b1f(),
+        };
+        self.player_pos = spawn_pos;
+        self.followers.reset(spawn_pos);
+        self.recompute_fov();
+        self.dirty = true;
+    }
+
     pub fn move_player(&mut self, dx: i32, dy: i32) -> MoveOutcome {
         let outcome = try_move_player(
             &mut self.map,
+            self.current_area,
             &mut self.player_pos,
             &mut self.player_facing,
             &mut self.followers,
             dx,
             dy,
         );
+
+        if let MoveOutcome::ChangeArea {
+            new_area,
+            spawn_pos,
+            ref message,
+        } = outcome
+        {
+            self.switch_area(new_area, spawn_pos);
+            return MoveOutcome::ChangeArea {
+                new_area,
+                spawn_pos,
+                message: message.clone(),
+            };
+        }
+
         self.recompute_fov();
         outcome
     }

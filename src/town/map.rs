@@ -1,5 +1,21 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AreaId {
+    Town,
+    DungeonB1F,
+}
+
+impl AreaId {
+    pub fn name(&self) -> &'static str {
+        match self {
+            AreaId::Town => "王都アルカン・商業区",
+            AreaId::DungeonB1F => "封魔の地下迷宮 B1F",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TileType {
+    // 街用タイル
     Wall,
     Floor,
     DoorClosed,
@@ -14,6 +30,16 @@ pub enum TileType {
     NpcGuard,
     NpcVillager,
     NpcSuspicious,
+
+    // ダンジョン用タイル
+    DungeonWall,
+    DungeonFloor,
+    IronGateClosed,
+    IronGateOpen,
+    ChestClosed,
+    ChestOpen,
+    StairsUp,
+    MonsterSymbol,
 }
 
 impl TileType {
@@ -34,6 +60,14 @@ impl TileType {
             TileType::NpcGuard => 'G',
             TileType::NpcVillager => 'P',
             TileType::NpcSuspicious => '?',
+            TileType::DungeonWall => '▓',
+            TileType::DungeonFloor => '·',
+            TileType::IronGateClosed => '#',
+            TileType::IronGateOpen => '/',
+            TileType::ChestClosed => 'C',
+            TileType::ChestOpen => 'c',
+            TileType::StairsUp => '<',
+            TileType::MonsterSymbol => 'M',
         }
     }
 
@@ -41,12 +75,24 @@ impl TileType {
     pub fn is_walkable(&self) -> bool {
         matches!(
             self,
-            TileType::Floor | TileType::DoorOpen | TileType::StairsDown
+            TileType::Floor
+                | TileType::DoorOpen
+                | TileType::StairsDown
+                | TileType::DungeonFloor
+                | TileType::IronGateOpen
+                | TileType::ChestOpen
+                | TileType::StairsUp
         )
     }
 
     pub fn blocks_sight(&self) -> bool {
-        matches!(self, TileType::Wall | TileType::DoorClosed)
+        matches!(
+            self,
+            TileType::Wall
+                | TileType::DoorClosed
+                | TileType::DungeonWall
+                | TileType::IronGateClosed
+        )
     }
 }
 
@@ -79,6 +125,7 @@ impl TownMap {
         }
     }
 
+    /// 王都アルカン 商業区の地上マップ生成
     pub fn create_arkan_capital() -> Self {
         let width = 46;
         let height = 9;
@@ -151,6 +198,67 @@ impl TownMap {
         // 町人配置
         map.set(15, 2, TileType::NpcVillager);
         map.set(25, 6, TileType::NpcVillager);
+
+        map
+    }
+
+    /// 封魔の地下迷宮 B1F マップ生成
+    /// （将来的なプロシージャル生成を見据えた初期固定迷宮）
+    pub fn create_dungeon_b1f() -> Self {
+        let width = 46;
+        let height = 9;
+        let mut map = Self::new(width, height, TileType::DungeonWall);
+
+        // 基本通路を掘る (Floor)
+        // 西のエントランスホール
+        for x in 1..=5 {
+            for y in 3..=5 {
+                map.set(x, y, TileType::DungeonFloor);
+            }
+        }
+        map.set(2, 4, TileType::StairsUp); // 地上への上り階段
+
+        // 中央大通路
+        for x in 5..=36 {
+            map.set(x, 4, TileType::DungeonFloor);
+        }
+
+        // 北側：宝物庫 (12..18, 1..3)
+        for x in 12..=18 {
+            for y in 1..=3 {
+                map.set(x, y, TileType::DungeonFloor);
+            }
+        }
+        map.set(15, 3, TileType::IronGateClosed); // 鉄格子扉
+        map.set(15, 1, TileType::ChestClosed);    // 宝箱A
+
+        // 南側：水没した礼拝堂 (18..26, 5..7)
+        for x in 18..=26 {
+            for y in 5..=7 {
+                map.set(x, y, TileType::DungeonFloor);
+            }
+        }
+        map.set(22, 4, TileType::DungeonFloor);
+        map.set(22, 6, TileType::Water);
+        map.set(23, 6, TileType::Water);
+        map.set(25, 7, TileType::ChestClosed); // 宝箱B
+
+        // 北東：牢獄区画 (28..34, 1..3)
+        for x in 28..=34 {
+            for y in 1..=3 {
+                map.set(x, y, TileType::DungeonFloor);
+            }
+        }
+        map.set(31, 3, TileType::IronGateClosed); // 牢獄の鉄格子
+
+        // 東端の大広間：魔物の巣窟 (36..44, 2..7)
+        for x in 36..=44 {
+            for y in 2..=7 {
+                map.set(x, y, TileType::DungeonFloor);
+            }
+        }
+        map.set(40, 4, TileType::MonsterSymbol); // 魔物の気配
+        map.set(43, 4, TileType::StairsDown);    // B2Fへの階段
 
         map
     }
