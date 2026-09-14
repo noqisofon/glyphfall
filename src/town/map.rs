@@ -126,9 +126,13 @@ impl TownMap {
     }
 
     /// 王都アルカン 商業区の地上マップ生成
+    ///
+    /// 中央広場を南北に拡張し、以前より広い王都を表示できるようにしている。
+    /// 北側の建物・南側の各エリアの内部構造は旧レイアウトのまま、拡張した
+    /// 広場帯（y=5..=8）を挟んで4行分南へずらして配置している。
     pub fn create_arkan_capital() -> Self {
         let width = 46;
-        let height = 9;
+        let height = 13;
         let mut map = Self::new(width, height, TileType::Floor);
 
         // 外壁
@@ -164,7 +168,7 @@ impl TownMap {
         map.set(37, 3, TileType::DoorClosed); // 商店入口
         map.set(37, 1, TileType::Shop);
 
-        // 中央広場：噴水・水路・街路樹・案内板
+        // 中央広場（北側）：噴水・水路・街路樹
         map.set(22, 3, TileType::Water);
         map.set(23, 3, TileType::Water);
         map.set(22, 4, TileType::Water);
@@ -172,41 +176,59 @@ impl TownMap {
 
         map.set(17, 3, TileType::Tree);
         map.set(28, 3, TileType::Tree);
-        map.set(17, 5, TileType::Tree);
-        map.set(28, 5, TileType::Tree);
 
-        map.set(21, 5, TileType::Sign);
+        // 中央広場（拡張帯）：水路を延長し並木を増やして広場自体を拡大
+        map.set(22, 5, TileType::Water);
+        map.set(23, 5, TileType::Water);
+        map.set(22, 6, TileType::Water);
+        map.set(23, 6, TileType::Water);
+
+        map.set(15, 5, TileType::Tree);
+        map.set(30, 5, TileType::Tree);
+        map.set(15, 8, TileType::Tree);
+        map.set(30, 8, TileType::Tree);
+
+        map.set(18, 7, TileType::NpcVillager); // 広場を散策する住人
+
+        // 案内板・街路樹（旧y=5から拡張帯の分だけ南へ）
+        map.set(17, 9, TileType::Tree);
+        map.set(28, 9, TileType::Tree);
+        map.set(21, 9, TileType::Sign);
 
         // 南東エリア：封鎖された地下迷宮階段 [>] と見張りの衛兵 [G]
         for x in 35..=44 {
-            map.set(x, 5, TileType::Wall);
+            map.set(x, 9, TileType::Wall);
         }
-        for y in 5..=8 {
+        for y in 9..=12 {
             map.set(35, y, TileType::Wall);
         }
-        map.set(35, 7, TileType::DoorClosed); // 地下区画への門扉
-        map.set(41, 7, TileType::StairsDown); // 地下迷宮への階段
-        map.set(37, 7, TileType::NpcGuard);   // 衛兵
+        map.set(35, 11, TileType::DoorClosed); // 地下区画への門扉
+        map.set(41, 11, TileType::StairsDown); // 地下迷宮への階段
+        map.set(37, 11, TileType::NpcGuard);   // 衛兵
 
         // 南西エリア：貧民街裏路地
         for x in 1..=14 {
-            map.set(x, 6, TileType::Wall);
+            map.set(x, 10, TileType::Wall);
         }
-        map.set(8, 6, TileType::Floor); // 抜け道
-        map.set(3, 7, TileType::NpcSuspicious); // 怪しい男
+        map.set(8, 10, TileType::Floor); // 抜け道
+        map.set(3, 11, TileType::NpcSuspicious); // 怪しい男
 
         // 町人配置
         map.set(15, 2, TileType::NpcVillager);
-        map.set(25, 6, TileType::NpcVillager);
+        map.set(25, 10, TileType::NpcVillager);
 
         map
     }
 
     /// 封魔の地下迷宮 B1F マップ生成
     /// （将来的なプロシージャル生成を見据えた初期固定迷宮）
+    ///
+    /// 高さは王都マップ（拡張後13マス）とテクスチャサイズを揃えるために合わせて
+    /// あるが、迷宮自体の内部構造（y=1..=7）は変更していない。増えた分の下端は
+    /// 既定の DungeonWall で塞がれるだけで、到達不能な余白になる。
     pub fn create_dungeon_b1f() -> Self {
         let width = 46;
-        let height = 9;
+        let height = 13;
         let mut map = Self::new(width, height, TileType::DungeonWall);
 
         // 基本通路を掘る (Floor)

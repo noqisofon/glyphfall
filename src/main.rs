@@ -426,7 +426,7 @@ fn spawn_status_window(
 
 fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &TownState) {
     let inner_cols = 46;
-    let inner_rows = 9;
+    let inner_rows = 13;
     let outer_cols = inner_cols + 2;
     let outer_rows = inner_rows + 2;
 
@@ -440,7 +440,7 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
         .with_children(|grid| {
             spawn_box_border(grid, font.clone(), outer_cols, outer_rows);
 
-            // ドット絵街マップ描画ノード（枠の内側 828×162px に完全フィット）
+            // ドット絵街マップ描画ノード（枠の内側 828×234px に完全フィット）
             grid.spawn((
                 Node {
                     grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
