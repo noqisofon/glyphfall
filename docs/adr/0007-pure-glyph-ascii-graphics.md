@@ -1,6 +1,6 @@
 # ADR-0007: グラフィック方針としてピュア・グリフ／ASCIIアート表現の採用
 
-- Status: Accepted
+- Status: Superseded by [ADR-0009](0009-retro-2d-sprite-graphics.md)
 - Date: 2026-09-13
 
 ## Background

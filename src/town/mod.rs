@@ -1,13 +1,17 @@
 pub mod fov;
 pub mod map;
 pub mod movement;
+pub mod pixel_art;
 
 pub use movement::{try_move_player, MoveOutcome};
 
 use bevy::prelude::*;
+use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use fov::FovMap;
 use map::TownMap;
 use movement::{Facing, FollowerHistory, Position};
+use pixel_art::{render_town_to_texture, TEXTURE_HEIGHT, TEXTURE_WIDTH};
 
 #[derive(Resource)]
 pub struct TownState {
@@ -18,14 +22,18 @@ pub struct TownState {
     pub followers: FollowerHistory,
     pub torch_active: bool,
     pub debug_see_all: bool,
+    pub texture_handle: Handle<Image>,
+    pub dirty: bool,
 }
 
 impl TownState {
-    pub fn new() -> Self {
+    pub fn new(images: &mut Assets<Image>) -> Self {
         let map = TownMap::create_arkan_capital();
         let fov = FovMap::new(map.width, map.height);
         let player_pos = Position { x: 20, y: 5 }; // 中央広場下
         let followers = FollowerHistory::new(Position { x: 20, y: 6 }, 4);
+
+        let mut buffer = vec![0u8; TEXTURE_WIDTH * TEXTURE_HEIGHT * 4];
 
         let mut state = Self {
             map,
@@ -35,8 +43,33 @@ impl TownState {
             followers,
             torch_active: true,
             debug_see_all: false,
+            texture_handle: Handle::default(),
+            dirty: true,
         };
         state.recompute_fov();
+
+        render_town_to_texture(
+            &state.map,
+            &state.fov,
+            state.player_pos,
+            &state.followers,
+            &mut buffer,
+        );
+
+        let mut image = Image::new(
+            Extent3d {
+                width: TEXTURE_WIDTH as u32,
+                height: TEXTURE_HEIGHT as u32,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            buffer,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+        );
+        image.sampler = bevy::image::ImageSampler::nearest();
+
+        state.texture_handle = images.add(image);
         state
     }
 
@@ -49,6 +82,7 @@ impl TownState {
             radius,
             self.debug_see_all,
         );
+        self.dirty = true;
     }
 
     pub fn move_player(&mut self, dx: i32, dy: i32) -> MoveOutcome {
@@ -63,53 +97,20 @@ impl TownState {
         self.recompute_fov();
         outcome
     }
-}
 
-pub fn format_town_display(town: &TownState) -> String {
-    let mut output = String::new();
-    let width = town.map.width;
-    let height = town.map.height;
-
-    let follower_glyphs = ['f', 's', 'm', 'k'];
-
-    for y in 0..height as i32 {
-        for x in 0..width as i32 {
-            let is_visible = town.fov.is_visible(x, y);
-
-            if !is_visible {
-                // 視界外は暗闇の影文字
-                output.push('░');
-                continue;
-            }
-
-            // 視界内の描画優先度: 主人公 > 仲間 > マップタイル
-            if x == town.player_pos.x && y == town.player_pos.y {
-                output.push('@');
-            } else {
-                let mut drawn_follower = false;
-                for (idx, &f_char) in follower_glyphs.iter().enumerate() {
-                    if let Some(f_pos) = town.followers.get_follower_position(idx) {
-                        if x == f_pos.x && y == f_pos.y {
-                            output.push(f_char);
-                            drawn_follower = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !drawn_follower {
-                    if let Some(tile) = town.map.get(x, y) {
-                        output.push(tile.glyph());
-                    } else {
-                        output.push(' ');
-                    }
-                }
-            }
+    pub fn update_texture(&mut self, images: &mut Assets<Image>) {
+        if !self.dirty {
+            return;
         }
-        if y < height as i32 - 1 {
-            output.push('\n');
+        if let Some(image) = images.get_mut(&self.texture_handle) {
+            render_town_to_texture(
+                &self.map,
+                &self.fov,
+                self.player_pos,
+                &self.followers,
+                &mut image.data,
+            );
         }
+        self.dirty = false;
     }
-
-    output
 }

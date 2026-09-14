@@ -10,7 +10,7 @@ use party::{
     diagnose_member, evaluate_command, ActionOutcome, Influence, MentalState, PartyCommand,
     PartyMember, Personality, PlayerSkills,
 };
-use town::{format_town_display, MoveOutcome, TownState};
+use town::{MoveOutcome, TownState};
 
 // ─────────────────────────────────────────────
 // 罫線文字セット（単線）
@@ -57,7 +57,10 @@ struct MessageTextNode;
 struct StatusHeaderNode;
 
 #[derive(Component)]
-struct CenterDisplayNode;
+struct TownMapImageNode;
+
+#[derive(Component)]
+struct BattleMonsterTextNode;
 
 #[derive(Resource)]
 struct PartyState {
@@ -75,7 +78,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Glyphfall - Town & Battle Exploration Prototype".into(),
+                title: "Glyphfall - 2D Pixel Art Town & Battle Prototype".into(),
                 resolution: (960.0_f32, 640.0_f32).into(),
                 ..default()
             }),
@@ -83,7 +86,6 @@ fn main() {
         }))
         .insert_resource(ClearColor(palette::BG))
         .insert_resource(AppMode::Town)
-        .insert_resource(TownState::new())
         .insert_resource(PlayerResource {
             skills: PlayerSkills {
                 magic_knowledge: 45,
@@ -141,11 +143,12 @@ fn main() {
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut images: ResMut<Assets<Image>>,
     party: Res<PartyState>,
-    town: Res<TownState>,
     mode: Res<AppMode>,
 ) {
     let font = asset_server.load(FONT_PATH);
+    let town = TownState::new(&mut images);
 
     commands.spawn(Camera2d);
 
@@ -162,7 +165,7 @@ fn setup(
             // 上部：ステータス＆操作ガイドウィンドウ (行数 4)
             spawn_status_window(root, font.clone(), &party, *mode, &town);
 
-            // 中央：街マップ or 敵モンスターのグリフウィンドウ (行数 9)
+            // 中央：ドット絵街マップ or 敵モンスターのウィンドウ (行数 9)
             spawn_center_window(root, font.clone(), &town);
 
             // 下部：メッセージウィンドウ (行数 5)
@@ -174,6 +177,8 @@ fn setup(
                 "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[WASD]で移動し仲間と街を探索しよう。\n[L]松明切替 | [B]地下迷宮(戦闘) | [Tab]仲間切替",
             );
         });
+
+    commands.insert_resource(town);
 }
 
 fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> String {
@@ -216,7 +221,7 @@ fn format_status_header(party: &PartyState, mode: AppMode, town: &TownState) -> 
             AppMode::Town => {
                 let torch_str = if town.torch_active { "点灯中(半径6)" } else { "消灯(半径2)" };
                 header.push_str(&format!(
-                    "  [王都アルカン・商業区] 松明: {} | 仲間列: @(主人公) f s m k\n",
+                    "  [王都アルカン・商業区] 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫) 騎士(白)\n",
                     torch_str
                 ));
             }
@@ -313,6 +318,23 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
         .with_children(|grid| {
             spawn_box_border(grid, font.clone(), outer_cols, outer_rows);
 
+            // ドット絵街マップ描画ノード（736×144px）
+            grid.spawn((
+                Node {
+                    grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
+                    grid_row: GridPlacement::start_span(2, outer_rows as u16 - 2),
+                    width: Val::Px(736.0),
+                    height: Val::Px(144.0),
+                    align_self: AlignSelf::Center,
+                    justify_self: JustifySelf::Center,
+                    display: Display::Flex,
+                    ..default()
+                },
+                ImageNode::new(town.texture_handle.clone()),
+                TownMapImageNode,
+            ));
+
+            // 戦闘モンスター描画ノード（初期は非表示）
             grid.spawn((
                 Node {
                     grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
@@ -320,16 +342,17 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
                     padding: UiRect::all(Val::Px(4.0)),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
+                    display: Display::None,
                     ..default()
                 },
-                Text::new(format_town_display(town)),
+                Text::new(""),
                 TextFont {
                     font,
                     font_size: CELL_PX * 0.85,
                     ..default()
                 },
                 TextColor(palette::TEXT),
-                CenterDisplayNode,
+                BattleMonsterTextNode,
             ));
         });
 }
@@ -447,17 +470,17 @@ fn monster_flash_tick(
     time: Res<Time>,
     mode: Res<AppMode>,
     mut battle: ResMut<BattleState>,
-    mut center_query: Query<&mut TextColor, With<CenterDisplayNode>>,
+    mut monster_query: Query<&mut TextColor, With<BattleMonsterTextNode>>,
 ) {
     if *mode == AppMode::Battle && battle.is_flashing {
         battle.flash_timer.tick(time.delta());
-        if let Ok(mut color) = center_query.get_single_mut() {
+        if let Ok(mut color) = monster_query.get_single_mut() {
             *color = TextColor(palette::DAMAGE);
         }
         if battle.flash_timer.finished() {
             battle.is_flashing = false;
             battle.flash_timer.reset();
-            if let Ok(mut color) = center_query.get_single_mut() {
+            if let Ok(mut color) = monster_query.get_single_mut() {
                 *color = TextColor(palette::TEXT);
             }
         }
@@ -468,17 +491,20 @@ fn handle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
     mut town: ResMut<TownState>,
+    mut images: ResMut<Assets<Image>>,
     mut party: ResMut<PartyState>,
     mut battle: ResMut<BattleState>,
     player: Res<PlayerResource>,
-    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<CenterDisplayNode>)>,
-    mut center_query: Query<&mut Text, (With<CenterDisplayNode>, Without<MessageTextNode>, Without<StatusHeaderNode>)>,
+    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<BattleMonsterTextNode>)>,
+    mut battle_monster_query: Query<(&mut Text, &mut Node), (With<BattleMonsterTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<TownMapImageNode>)>,
+    mut town_image_query: Query<&mut Node, (With<TownMapImageNode>, Without<BattleMonsterTextNode>)>,
     mut message_query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
 ) {
     let mut rng = thread_rng();
     let mut new_message = None;
     let mut update_header = false;
-    let mut update_center = false;
+    let mut mode_changed = false;
+    let mut update_monster_display = false;
 
     // [Space]: タイプライターの文字送りをスキップ
     if keyboard.just_pressed(KeyCode::Space) {
@@ -494,7 +520,6 @@ fn handle_input(
         town.debug_see_all = party.debug_mode;
         town.recompute_fov();
         update_header = true;
-        update_center = true;
     }
 
     // [Tab]: 注目する仲間切り替え
@@ -518,7 +543,8 @@ fn handle_input(
             }
         };
         update_header = true;
-        update_center = true;
+        mode_changed = true;
+        update_monster_display = true;
     }
 
     match *mode {
@@ -528,7 +554,6 @@ fn handle_input(
                 town.torch_active = !town.torch_active;
                 town.recompute_fov();
                 update_header = true;
-                update_center = true;
                 let status = if town.torch_active {
                     "松明に火を灯した。周囲が明るくなった！（視界半径6マス）"
                 } else {
@@ -553,7 +578,6 @@ fn handle_input(
 
             if dx != 0 || dy != 0 {
                 let outcome = town.move_player(dx, dy);
-                update_center = true;
 
                 match outcome {
                     MoveOutcome::Moved { message } => {
@@ -568,6 +592,10 @@ fn handle_input(
                     }
                     MoveOutcome::TriggerBattle { message } => {
                         new_message = Some(message);
+                        *mode = AppMode::Battle;
+                        mode_changed = true;
+                        update_header = true;
+                        update_monster_display = true;
                     }
                 }
             }
@@ -578,7 +606,7 @@ fn handle_input(
                 battle.next_monster();
                 let mon = battle.current_monster();
                 new_message = Some(format!("あらたな　魔物【{}】が　あらわれた！", mon.name));
-                update_center = true;
+                update_monster_display = true;
             }
 
             // [1]: 「たたかう」
@@ -589,7 +617,7 @@ fn handle_input(
                     ActionOutcome::Obeyed { action_msg } => {
                         let damage: i32 = rng.gen_range(8..=14);
                         let (mon_name, is_dead) = battle.apply_damage(damage);
-                        update_center = true;
+                        update_monster_display = true;
 
                         let mut msg = format!(
                             "{}に「たたかう」よう　指示した！\n{}\n{}に {}の ダメージを与えた！",
@@ -608,7 +636,7 @@ fn handle_input(
                         if member.personality == Personality::Yandere {
                             let damage: i32 = rng.gen_range(16..=22);
                             let (mon_name, is_dead) = battle.apply_damage(damage);
-                            update_center = true;
+                            update_monster_display = true;
 
                             let mut msg = format!(
                                 "{}に「たたかう」よう　指示した！\n{}\n{}\nなんと　{}に {}の 大ダメージ！",
@@ -657,7 +685,7 @@ fn handle_input(
                     ActionOutcome::Obeyed { action_msg } => {
                         let damage: i32 = rng.gen_range(25..=35);
                         let (mon_name, is_dead) = battle.apply_damage(damage);
-                        update_center = true;
+                        update_monster_display = true;
 
                         let mut msg = format!(
                             "{}に「すてみ」を　命じた！\n{}\n会心の一撃！　{}に {}の 痛恨のダメージ！",
@@ -691,21 +719,36 @@ fn handle_input(
         }
     }
 
+    // テクスチャの更新（移動やFOV変化があった場合）
+    town.update_texture(&mut images);
+
+    // モード切替に伴うノード表示・非表示の更新
+    if mode_changed {
+        if let Ok(mut town_node) = town_image_query.get_single_mut() {
+            town_node.display = match *mode {
+                AppMode::Town => Display::Flex,
+                AppMode::Battle => Display::None,
+            };
+        }
+        if let Ok((_, mut battle_node)) = battle_monster_query.get_single_mut() {
+            battle_node.display = match *mode {
+                AppMode::Town => Display::None,
+                AppMode::Battle => Display::Flex,
+            };
+        }
+    }
+
+    // 戦闘モンスター表示の更新
+    if update_monster_display && *mode == AppMode::Battle {
+        if let Ok((mut text, _)) = battle_monster_query.get_single_mut() {
+            *text = Text::new(format_monster_display(battle.current_monster()));
+        }
+    }
+
     // ヘッダーUIの更新
     if update_header {
         if let Ok(mut text) = header_query.get_single_mut() {
             *text = Text::new(format_status_header(&party, *mode, &town));
-        }
-    }
-
-    // 中央ウィンドウUIの更新
-    if update_center {
-        if let Ok(mut text) = center_query.get_single_mut() {
-            let content = match *mode {
-                AppMode::Town => format_town_display(&town),
-                AppMode::Battle => format_monster_display(battle.current_monster()),
-            };
-            *text = Text::new(content);
         }
     }
 

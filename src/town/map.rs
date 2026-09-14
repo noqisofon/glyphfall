@@ -17,6 +17,7 @@ pub enum TileType {
 }
 
 impl TileType {
+    #[allow(dead_code)]
     pub fn glyph(&self) -> char {
         match self {
             TileType::Wall => '#',
