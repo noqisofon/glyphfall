@@ -37,7 +37,7 @@ mod palette {
 // フォント設定（Bizin Gothic / Mint Mono どちらも assets/fonts に配置済み）
 const FONT_PATH: &str = "fonts/BizinGothic-Regular.ttf";
 // const FONT_PATH: &str = "fonts/MintMono-Regular.ttf";
-const CELL_PX: f32 = 18.0;
+const CELL_PX: f32 = 20.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
 pub enum AppMode {
@@ -93,7 +93,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Glyphfall - Town, Dungeon & Tri-Split Conversation Prototype".into(),
-                resolution: (960.0_f32, 640.0_f32).into(),
+                resolution: (1000.0_f32, 640.0_f32).into(),
                 ..default()
             }),
             ..default()
@@ -440,7 +440,7 @@ fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &Tow
         .with_children(|grid| {
             spawn_box_border(grid, font.clone(), outer_cols, outer_rows);
 
-            // ドット絵街マップ描画ノード（枠の内側 828×162px に完全フィット）
+            // ドット絵街マップ描画ノード（枠の内側 920×180px に完全フィット）
             grid.spawn((
                 Node {
                     grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
@@ -483,7 +483,7 @@ fn spawn_tri_split_window(
     inv: &PlayerInventory,
     default_msg: &str,
 ) {
-    let total_width = (15 + 22 + 11) as f32 * CELL_PX; // 48列 = 864.0 px
+    let total_width = (15 + 22 + 11) as f32 * CELL_PX; // 48列 = 960.0 px
 
     parent
         .spawn(Node {
