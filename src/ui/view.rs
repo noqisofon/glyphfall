@@ -250,7 +250,6 @@ pub fn format_left_window(
                         battle.turn_steps.len().max(1)
                     )
                 }
-                BattlePhase::Victory => "【勝利！】\n魔物をたおした！\n\n[Space/B]で\n街へ戻る".into(),
                 BattlePhase::Defeat => "【全滅……】\nあなたは力尽きた\n\n[B]街へ逃走\n(宿屋で治療)".into(),
             }
         }
@@ -306,7 +305,6 @@ pub fn format_right_window(
                     }
                 }
                 BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),
-                BattlePhase::Victory => "[Space]街へ\n[B]街へ帰還\n\n(戦闘勝利)".into(),
                 BattlePhase::Defeat => "[B]街へ帰還\n\n(敗北)".into(),
             }
         }
