@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 mod battle;
 mod event;
+mod macros;
 mod party;
 mod town;
 mod ui;

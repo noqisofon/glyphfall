@@ -7,23 +7,8 @@
 pub mod input;
 pub use input::handle_battle_input;
 
-use bevy::prelude::*;
-use std::ops::{Deref, DerefMut};
+use crate::macros::newtype_resource;
 
 pub use glyphfall_core::battle::{create_default_monsters, BattlePhase, BattleState, Monster};
 
-#[derive(Resource)]
-pub struct BattleStateRes(pub BattleState);
-
-impl Deref for BattleStateRes {
-    type Target = BattleState;
-    fn deref(&self) -> &BattleState {
-        &self.0
-    }
-}
-
-impl DerefMut for BattleStateRes {
-    fn deref_mut(&mut self) -> &mut BattleState {
-        &mut self.0
-    }
-}
+newtype_resource!(BattleStateRes, BattleState);
