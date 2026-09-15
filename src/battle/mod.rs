@@ -5,6 +5,9 @@ use crate::party::{
     PlayerBattleAction, PlayerSkills,
 };
 
+pub mod input;
+pub use input::handle_battle_input;
+
 /// 敵モンスターの定義
 #[derive(Component, Debug, Clone)]
 pub struct Monster {
@@ -41,6 +44,7 @@ pub enum BattlePhase {
     /// ターン解決・ログ送り中
     TurnResolving { step_cursor: usize },
     /// 勝利（敵撃破、次の敵へ移行可能）
+    #[allow(dead_code)]
     Victory,
     /// 敗北（主人公が倒れた）
     Defeat,

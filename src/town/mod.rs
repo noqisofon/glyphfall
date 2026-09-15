@@ -1,11 +1,16 @@
 pub mod dialogue;
 pub mod fov;
+pub mod input;
 pub mod interact;
 pub mod map;
 pub mod movement;
 pub mod pixel_art;
 
 pub use dialogue::{DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, SHOP_ITEMS};
+pub use input::{
+    handle_dialogue_input, handle_inn_input, handle_interact_input, handle_shop_input,
+    handle_town_input, handle_travel_input,
+};
 pub use interact::{CommandKind, InteractOutcome, TargetKind};
 pub use map::AreaId;
 pub use movement::{try_move_player, MoveOutcome, Position};

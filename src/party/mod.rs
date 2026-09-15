@@ -25,6 +25,20 @@ impl ReserveRoster {
     }
 }
 
+/// 現在同行中のパーティメンバーと注目中の仲間インデックス
+#[derive(Resource, Debug, Clone)]
+pub struct PartyState {
+    pub members: Vec<PartyMember>,
+    pub selected_index: usize,
+    pub debug_mode: bool,
+}
+
+/// プレイヤー自身の診断スキルなどのリソース
+#[derive(Resource, Debug, Clone)]
+pub struct PlayerResource {
+    pub skills: PlayerSkills,
+}
+
 
 
 
