@@ -10,7 +10,10 @@ use party::{
     diagnose_member, evaluate_command, ActionOutcome, Influence, MentalState, PartyCommand,
     PartyMember, Personality, PlayerInventory, PlayerSkills,
 };
-use town::{DialoguePartner, DialogueSession, MoveOutcome, TownState, SHOP_ITEMS};
+use town::{
+    CommandKind, DialoguePartner, DialogueSession, InteractOutcome, MoveOutcome, TargetKind,
+    TownState, SHOP_ITEMS,
+};
 
 // ─────────────────────────────────────────────
 // 罫線文字セット（単線）
@@ -42,10 +45,26 @@ const CELL_PX: f32 = 18.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
 pub enum AppMode {
     Town,
+    Interact,
     Dialogue,
     Shop,
     Inn,
     Battle,
+}
+
+/// ADR-0011: コマンド駆動インタラクトの進行段階。
+/// 「どうぐ」以外はコマンド決定後に方向選択へ遷移する。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+enum CommandMenuStage {
+    #[default]
+    ChoosingCommand,
+    ChoosingDirection(CommandKind),
+}
+
+#[derive(Resource, Default)]
+struct CommandMenuState {
+    stage: CommandMenuStage,
+    selected_index: usize,
 }
 
 #[derive(Component)]
@@ -102,6 +121,7 @@ fn main() {
         .insert_resource(AppMode::Town)
         .insert_resource(PlayerInventory::default())
         .insert_resource(ActiveDialogue::default())
+        .insert_resource(CommandMenuState::default())
         .insert_resource(PlayerResource {
             skills: PlayerSkills {
                 magic_knowledge: 45,
@@ -192,7 +212,7 @@ fn setup(
                 root,
                 font.clone(),
                 &inv,
-                "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。住人やお店に接触すると会話・取引ができます。",
+                "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[Z]キーでコマンドを開き、話したい相手や調べたい対象の方向を選ぼう。",
             );
         });
 
@@ -205,6 +225,7 @@ fn format_status_header(
     town: &TownState,
     inv: &PlayerInventory,
     dialogue: &Option<DialogueSession>,
+    command_menu: &CommandMenuState,
 ) -> String {
     let member = &party.members[party.selected_index];
     let mut header = format!(
@@ -258,6 +279,16 @@ fn format_status_header(
                     partner_name, inv.gold
                 ));
             }
+            AppMode::Interact => {
+                let hint = match command_menu.stage {
+                    CommandMenuStage::ChoosingCommand => "コマンドを選択してください",
+                    CommandMenuStage::ChoosingDirection(_) => "方向キーで対象を選択してください",
+                };
+                header.push_str(&format!(
+                    "  [コマンド選択中] 所持金: {}G | {}\n",
+                    inv.gold, hint
+                ));
+            }
             AppMode::Shop => {
                 header.push_str(&format!(
                     "  [道具屋・取引中: 道具屋の店主] 所持金: {}G | [W/S]で商品選択 | [1]購入 | [3]店を出る\n",
@@ -278,8 +309,16 @@ fn format_status_header(
 
     match mode {
         AppMode::Town => {
-            header.push_str("操作: [WASD]移動 | [L]松明切替 | [B]戦闘切替 | [Tab]仲間切替 | [Space]スキップ");
+            header.push_str("操作: [WASD]移動 | [Z]コマンド | [L]松明切替 | [B]戦闘切替 | [Tab]仲間切替 | [Space]スキップ");
         }
+        AppMode::Interact => match command_menu.stage {
+            CommandMenuStage::ChoosingCommand => {
+                header.push_str("操作: [W/S]コマンド選択 | [1/Enter]決定 | [3/Esc]やめる");
+            }
+            CommandMenuStage::ChoosingDirection(_) => {
+                header.push_str("操作: [WASD]方向を選択 | [Esc]やめる");
+            }
+        },
         AppMode::Dialogue => {
             header.push_str("操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる");
         }
@@ -301,8 +340,30 @@ fn format_left_window(
     mode: AppMode,
     inv: &PlayerInventory,
     dialogue: &Option<DialogueSession>,
+    command_menu: &CommandMenuState,
+    facing_target: TargetKind,
 ) -> String {
     match mode {
+        AppMode::Interact => match command_menu.stage {
+            CommandMenuStage::ChoosingCommand => {
+                let mut out = "【コマンド】\n".to_string();
+                for (idx, cmd) in CommandKind::ALL.iter().enumerate() {
+                    let cursor = if idx == command_menu.selected_index {
+                        "▶"
+                    } else {
+                        " "
+                    };
+                    out.push_str(&format!("{} {}\n", cursor, cmd.dynamic_label(facing_target)));
+                }
+                out
+            }
+            CommandMenuStage::ChoosingDirection(cmd) => {
+                format!(
+                    "【{}】\n方向を選んで\n対象を指定\nしてください",
+                    cmd.dynamic_label(facing_target)
+                )
+            }
+        },
         AppMode::Dialogue => {
             let session = dialogue.as_ref();
             let selected = session.map(|s| s.selected_topic_index).unwrap_or(0);
@@ -345,8 +406,16 @@ fn format_left_window(
     }
 }
 
-fn format_right_window(mode: AppMode, dialogue: &Option<DialogueSession>) -> String {
+fn format_right_window(
+    mode: AppMode,
+    dialogue: &Option<DialogueSession>,
+    command_menu: &CommandMenuState,
+) -> String {
     match mode {
+        AppMode::Interact => match command_menu.stage {
+            CommandMenuStage::ChoosingCommand => "[W/S]選択\n[1/Enter]決定\n[3/Esc]やめる".into(),
+            CommandMenuStage::ChoosingDirection(_) => "[WASD]方向選択\n[Esc]やめる".into(),
+        },
         AppMode::Dialogue => {
             let has_learnable = dialogue
                 .as_ref()
@@ -361,7 +430,7 @@ fn format_right_window(mode: AppMode, dialogue: &Option<DialogueSession>) -> Str
         }
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
         AppMode::Inn => "[1]とまる(50G)\n[3]やめる\n\n(HP/MP全回復)".into(),
-        AppMode::Town => "[探索操作]\nWASD:移動\nL   :松明\nTab :仲間\nB   :戦闘".into(),
+        AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
         AppMode::Battle => "[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]観察\n[B]街へ帰還".into(),
     }
 }
@@ -412,7 +481,14 @@ fn spawn_status_window(
                     padding: UiRect::all(Val::Px(4.0)),
                     ..default()
                 },
-                Text::new(format_status_header(party, mode, town, inv, &None)),
+                Text::new(format_status_header(
+                    party,
+                    mode,
+                    town,
+                    inv,
+                    &None,
+                    &CommandMenuState::default(),
+                )),
                 TextFont {
                     font,
                     font_size: CELL_PX * 0.82,
@@ -499,7 +575,13 @@ fn spawn_tri_split_window(
                 font.clone(),
                 13,
                 5,
-                &format_left_window(AppMode::Town, inv, &None),
+                &format_left_window(
+                    AppMode::Town,
+                    inv,
+                    &None,
+                    &CommandMenuState::default(),
+                    TargetKind::Nothing,
+                ),
             );
 
             // 中央メッセージウィンドウ: 20列 + 枠2列 = 22列 (396px)
@@ -511,7 +593,7 @@ fn spawn_tri_split_window(
                 font.clone(),
                 9,
                 5,
-                &format_right_window(AppMode::Town, &None),
+                &format_right_window(AppMode::Town, &None, &CommandMenuState::default()),
             );
         });
 }
@@ -693,6 +775,7 @@ fn handle_input(
     mut inv: ResMut<PlayerInventory>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut battle: ResMut<BattleState>,
+    mut command_menu: ResMut<CommandMenuState>,
     player: Res<PlayerResource>,
     mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<BattleMonsterTextNode>, Without<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
     mut left_window_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<BattleMonsterTextNode>, Without<RightWindowTextNode>)>,
@@ -807,29 +890,124 @@ fn handle_input(
                         new_message = Some(message);
                         update_header = true;
                     }
-                    MoveOutcome::ChestOpened { gold, item, message } => {
-                        inv.add_gold(gold);
-                        inv.add_item(&item);
-                        new_message = Some(message);
-                        update_header = true;
+                }
+            }
+
+            // [Z]: コマンドウィンドウを開く（ADR-0011: コマンド駆動インタラクト）
+            if keyboard.just_pressed(KeyCode::KeyZ) {
+                command_menu.stage = CommandMenuStage::ChoosingCommand;
+                command_menu.selected_index = 0;
+                *mode = AppMode::Interact;
+                new_message = Some("コマンドを選んでください。".into());
+                mode_changed = true;
+                update_header = true;
+                update_tri_windows = true;
+            }
+        }
+        AppMode::Interact => match command_menu.stage {
+            CommandMenuStage::ChoosingCommand => {
+                let len = CommandKind::ALL.len();
+                if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                    command_menu.selected_index = (command_menu.selected_index + len - 1) % len;
+                    update_tri_windows = true;
+                }
+                if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                    command_menu.selected_index = (command_menu.selected_index + 1) % len;
+                    update_tri_windows = true;
+                }
+
+                if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                    let command = CommandKind::ALL[command_menu.selected_index];
+                    if command.needs_direction() {
+                        command_menu.stage = CommandMenuStage::ChoosingDirection(command);
+                        new_message = Some(format!(
+                            "『{}』する方向を選んでください。",
+                            command.dynamic_label(town.facing_target_kind())
+                        ));
                         update_tri_windows = true;
-                    }
-                    MoveOutcome::StartDialogue(partner) => {
-                        let session = DialogueSession::start(partner);
-                        new_message = Some(session.current_text.clone());
-                        *mode = match partner {
-                            DialoguePartner::Shop => AppMode::Shop,
-                            DialoguePartner::Inn => AppMode::Inn,
-                            _ => AppMode::Dialogue,
-                        };
-                        dialogue_res.0 = Some(session);
+                    } else {
+                        // 「どうぐ」は方向を選ばず、その場で所持品を確認する
+                        let mut msg = format!("【どうぐ】所持金: {}G\n", inv.gold);
+                        if inv.items.is_empty() {
+                            msg.push_str("何も持っていない。");
+                        } else {
+                            for item in &inv.items {
+                                msg.push_str(&format!("・{}\n", item));
+                            }
+                        }
+                        new_message = Some(msg);
+                        *mode = AppMode::Town;
                         mode_changed = true;
                         update_header = true;
                         update_tri_windows = true;
                     }
                 }
+
+                if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                    *mode = AppMode::Town;
+                    new_message = Some("コマンドをやめた。".into());
+                    mode_changed = true;
+                    update_header = true;
+                    update_tri_windows = true;
+                }
             }
-        }
+            CommandMenuStage::ChoosingDirection(command) => {
+                let mut dx = 0;
+                let mut dy = 0;
+
+                if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                    dy -= 1;
+                } else if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                    dy += 1;
+                } else if keyboard.just_pressed(KeyCode::KeyA) || keyboard.just_pressed(KeyCode::ArrowLeft) {
+                    dx -= 1;
+                } else if keyboard.just_pressed(KeyCode::KeyD) || keyboard.just_pressed(KeyCode::ArrowRight) {
+                    dx += 1;
+                }
+
+                if dx != 0 || dy != 0 {
+                    town.face(dx, dy);
+                    let outcome = town.resolve_interact(command);
+                    match outcome {
+                        InteractOutcome::Message(msg) => {
+                            new_message = Some(msg);
+                        }
+                        InteractOutcome::ChestOpened { gold, item, message } => {
+                            inv.add_gold(gold);
+                            inv.add_item(&item);
+                            new_message = Some(message);
+                        }
+                        InteractOutcome::StartDialogue(partner) => {
+                            let session = DialogueSession::start(partner);
+                            new_message = Some(session.current_text.clone());
+                            *mode = match partner {
+                                DialoguePartner::Shop => AppMode::Shop,
+                                DialoguePartner::Inn => AppMode::Inn,
+                                _ => AppMode::Dialogue,
+                            };
+                            dialogue_res.0 = Some(session);
+                        }
+                    }
+
+                    if *mode == AppMode::Interact {
+                        *mode = AppMode::Town;
+                    }
+                    mode_changed = true;
+                    command_menu.stage = CommandMenuStage::ChoosingCommand;
+                    update_header = true;
+                    update_tri_windows = true;
+                }
+
+                if keyboard.just_pressed(KeyCode::Escape) {
+                    *mode = AppMode::Town;
+                    command_menu.stage = CommandMenuStage::ChoosingCommand;
+                    new_message = Some("コマンドをやめた。".into());
+                    mode_changed = true;
+                    update_header = true;
+                    update_tri_windows = true;
+                }
+            }
+        },
         AppMode::Dialogue => {
             // [W/S]: 話題選択
             if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
@@ -1099,17 +1277,30 @@ fn handle_input(
     // 三分割ウィンドウ（左・右）の更新
     if update_tri_windows {
         if let Ok(mut text) = left_window_query.get_single_mut() {
-            *text = Text::new(format_left_window(*mode, &inv, &dialogue_res.0));
+            *text = Text::new(format_left_window(
+                *mode,
+                &inv,
+                &dialogue_res.0,
+                &command_menu,
+                town.facing_target_kind(),
+            ));
         }
         if let Ok(mut text) = right_window_query.get_single_mut() {
-            *text = Text::new(format_right_window(*mode, &dialogue_res.0));
+            *text = Text::new(format_right_window(*mode, &dialogue_res.0, &command_menu));
         }
     }
 
     // ヘッダーUIの更新
     if update_header {
         if let Ok(mut text) = header_query.get_single_mut() {
-            *text = Text::new(format_status_header(&party, *mode, &town, &inv, &dialogue_res.0));
+            *text = Text::new(format_status_header(
+                &party,
+                *mode,
+                &town,
+                &inv,
+                &dialogue_res.0,
+                &command_menu,
+            ));
         }
     }
 

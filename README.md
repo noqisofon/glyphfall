@@ -80,6 +80,7 @@ cargo run
 - [ADR-0008: ハイブリッド移動視点システム（視界制限付き見下ろし × 一人称疑似3D）の採用 (Superseded)](docs/adr/0008-hybrid-exploration-perspective.md)
 - [ADR-0009: レトロ2Dドット絵／スプライト・ハイブリッドの採用](docs/adr/0009-retro-2d-sprite-graphics.md)
 - [ADR-0010: 統一見下ろし視点探索システムとダンジョン2Dドット絵化の採用](docs/adr/0010-unified-top-down-exploration.md)
+- [ADR-0011: コマンド駆動インタラクト（Zキー→コマンド選択→方向選択）の採用](docs/adr/0011-command-driven-interaction.md)
 
 
 

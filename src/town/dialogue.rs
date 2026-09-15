@@ -8,7 +8,6 @@ pub enum DialoguePartner {
     Guard,
     Villager,
     Suspicious,
-    Sign,
 }
 
 impl DialoguePartner {
@@ -20,7 +19,6 @@ impl DialoguePartner {
             DialoguePartner::Guard => "王都衛兵",
             DialoguePartner::Villager => "街の女性",
             DialoguePartner::Suspicious => "裏通りの怪しい男",
-            DialoguePartner::Sign => "案内看板",
         }
     }
 }
@@ -89,10 +87,6 @@ impl DialogueSession {
             ),
             DialoguePartner::Suspicious => (
                 "怪しい男「ヒヒッ…あんた、裏の事情に首を突っ込みたいのかい？\nいい情報を持ってるぜ…」".into(),
-                None,
-            ),
-            DialoguePartner::Sign => (
-                "【王都アルカン・案内看板】\n北西: 宿屋[H]・酒場[T]  北東: 道具屋[S]\n南西: 貧民街裏路地     南東: 地下迷宮封鎖地区".into(),
                 None,
             ),
         };

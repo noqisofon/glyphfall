@@ -1,4 +1,3 @@
-use super::dialogue::DialoguePartner;
 use super::map::{AreaId, TileType, TownMap};
 use std::collections::VecDeque;
 
@@ -61,12 +60,6 @@ pub enum MoveOutcome {
     ChangeArea {
         new_area: AreaId,
         spawn_pos: Position,
-        message: String,
-    },
-    StartDialogue(DialoguePartner),
-    ChestOpened {
-        gold: i32,
-        item: String,
         message: String,
     },
 }
@@ -159,26 +152,21 @@ pub fn try_move_player(
                 message: Some("ギギギ…と錆びた音を立てて鉄格子扉を開けた。".into()),
             }
         }
-        TileType::ChestClosed => {
-            map.set(target_x, target_y, TileType::ChestOpen);
-            MoveOutcome::ChestOpened {
-                gold: 120,
-                item: "特やくそう".into(),
-                message: "宝箱を開けた！\n120ゴールドと「特やくそう」を手に入れた！".into(),
-            }
-        }
+        // 宝箱・案内看板・NPC・お店は、接触しただけでは何も起きない（ADR-0011）。
+        // 移動はブロックされるのみで、開封・会話は [Z]コマンド駆動インタラクトからのみ行える。
+        TileType::ChestClosed => MoveOutcome::Blocked { message: None },
         TileType::MonsterSymbol => {
             MoveOutcome::TriggerBattle {
                 message: "暗闇から魔物の影が飛びかかってきた！\n不意打ちの戦闘だ！".into(),
             }
         }
-        TileType::Sign => MoveOutcome::StartDialogue(DialoguePartner::Sign),
-        TileType::Inn => MoveOutcome::StartDialogue(DialoguePartner::Inn),
-        TileType::Tavern => MoveOutcome::StartDialogue(DialoguePartner::Tavern),
-        TileType::Shop => MoveOutcome::StartDialogue(DialoguePartner::Shop),
-        TileType::NpcGuard => MoveOutcome::StartDialogue(DialoguePartner::Guard),
-        TileType::NpcVillager => MoveOutcome::StartDialogue(DialoguePartner::Villager),
-        TileType::NpcSuspicious => MoveOutcome::StartDialogue(DialoguePartner::Suspicious),
+        TileType::Sign => MoveOutcome::Blocked { message: None },
+        TileType::Inn => MoveOutcome::Blocked { message: None },
+        TileType::Tavern => MoveOutcome::Blocked { message: None },
+        TileType::Shop => MoveOutcome::Blocked { message: None },
+        TileType::NpcGuard => MoveOutcome::Blocked { message: None },
+        TileType::NpcVillager => MoveOutcome::Blocked { message: None },
+        TileType::NpcSuspicious => MoveOutcome::Blocked { message: None },
         TileType::Wall => MoveOutcome::Blocked {
             message: Some("頑丈な石壁だ。進むことはできない。".into()),
         },
@@ -311,7 +299,8 @@ mod tests {
     }
 
     #[test]
-    fn test_chest_opens_on_bump() {
+    fn test_chest_does_not_open_on_bump() {
+        // ADR-0011: 接触しただけでは何も起きない。宝箱の開封は [Z]コマンド経由のみ。
         let mut map = TownMap::new(10, 10, TileType::DungeonFloor);
         map.set(5, 4, TileType::ChestClosed);
 
@@ -329,7 +318,8 @@ mod tests {
             -1,
         );
 
-        assert!(matches!(outcome, MoveOutcome::ChestOpened { .. }));
-        assert_eq!(map.get(5, 4), Some(TileType::ChestOpen));
+        assert!(matches!(outcome, MoveOutcome::Blocked { .. }));
+        assert_eq!(player_pos, Position { x: 5, y: 5 });
+        assert_eq!(map.get(5, 4), Some(TileType::ChestClosed));
     }
 }

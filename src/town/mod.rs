@@ -1,10 +1,12 @@
 pub mod dialogue;
 pub mod fov;
+pub mod interact;
 pub mod map;
 pub mod movement;
 pub mod pixel_art;
 
 pub use dialogue::{DialoguePartner, DialogueSession, SHOP_ITEMS};
+pub use interact::{CommandKind, InteractOutcome, TargetKind};
 pub use map::AreaId;
 pub use movement::{try_move_player, MoveOutcome};
 
@@ -12,7 +14,7 @@ use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use fov::FovMap;
-use map::TownMap;
+use map::{TileType, TownMap};
 use movement::{Facing, FollowerHistory, Position};
 use pixel_art::{render_town_to_texture, TEXTURE_HEIGHT, TEXTURE_WIDTH};
 
@@ -129,6 +131,40 @@ impl TownState {
         }
 
         self.recompute_fov();
+        outcome
+    }
+
+    /// プレイヤーが現在向いている先のタイル（コマンド駆動インタラクトの対象候補）
+    pub fn tile_ahead(&self) -> Option<TileType> {
+        let (dx, dy) = interact::facing_delta(self.player_facing);
+        self.map.get(self.player_pos.x + dx, self.player_pos.y + dy)
+    }
+
+    /// コマンドウィンドウのラベル動的切り替え（しらべる→みる）に使う対象種別
+    pub fn facing_target_kind(&self) -> TargetKind {
+        interact::classify_tile(self.tile_ahead())
+    }
+
+    /// 移動を伴わずに向きだけを変える（方向選択ステップ用）
+    pub fn face(&mut self, dx: i32, dy: i32) {
+        if dx > 0 {
+            self.player_facing = Facing::Right;
+        } else if dx < 0 {
+            self.player_facing = Facing::Left;
+        } else if dy > 0 {
+            self.player_facing = Facing::Down;
+        } else if dy < 0 {
+            self.player_facing = Facing::Up;
+        }
+        self.dirty = true;
+    }
+
+    /// Zメニューで確定したコマンドを、向いている方向に対して判定する
+    pub fn resolve_interact(&mut self, command: CommandKind) -> InteractOutcome {
+        let outcome = interact::resolve(&mut self.map, self.player_pos, self.player_facing, command);
+        if matches!(outcome, InteractOutcome::ChestOpened { .. }) {
+            self.dirty = true;
+        }
         outcome
     }
 
