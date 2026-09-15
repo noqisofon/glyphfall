@@ -2,6 +2,7 @@
 pub enum AreaId {
     Town,
     DungeonB1F,
+    Village,
 }
 
 impl AreaId {
@@ -9,6 +10,7 @@ impl AreaId {
         match self {
             AreaId::Town => "王都アルカン・商業区",
             AreaId::DungeonB1F => "封魔の地下迷宮 B1F",
+            AreaId::Village => "近郊の村・すずかけ村",
         }
     }
 }
@@ -30,6 +32,10 @@ pub enum TileType {
     NpcGuard,
     NpcVillager,
     NpcSuspicious,
+    /// 旅シミュレーション(ADR-0004)への入り口。接触すると移動姿勢選択（ADR-0013の
+    /// 発生エンジンを介した道中ロール）を経て別の町・村へ移動する。単純な移動では
+    /// 通過できない（`is_walkable`はfalse）。
+    RoadExit,
 
     // ダンジョン用タイル
     DungeonWall,
@@ -60,6 +66,7 @@ impl TileType {
             TileType::NpcGuard => 'G',
             TileType::NpcVillager => 'P',
             TileType::NpcSuspicious => '?',
+            TileType::RoadExit => '=',
             TileType::DungeonWall => '▓',
             TileType::DungeonFloor => '·',
             TileType::IronGateClosed => '#',
@@ -216,6 +223,55 @@ impl TownMap {
         // 町人配置
         map.set(15, 2, TileType::NpcVillager);
         map.set(25, 10, TileType::NpcVillager);
+
+        // 西側の街道口：ここへ向かって移動すると旅シミュレーション（ADR-0004/0013）を開始する
+        map.set(0, 6, TileType::RoadExit);
+
+        map
+    }
+
+    /// 近郊の村「すずかけ村」の地上マップ生成（ADR-0013 突発イベント発生システムの
+    /// 動作検証用に追加した最小の目的地）。
+    ///
+    /// テクスチャサイズを王都・ダンジョンと揃えるため 46×13 の同一サイズで生成する。
+    pub fn create_suzukake_village() -> Self {
+        let width = 46;
+        let height = 13;
+        let mut map = Self::new(width, height, TileType::Floor);
+
+        // 外壁
+        for x in 0..width as i32 {
+            map.set(x, 0, TileType::Wall);
+            map.set(x, height as i32 - 1, TileType::Wall);
+        }
+        for y in 0..height as i32 {
+            map.set(0, y, TileType::Wall);
+            map.set(width as i32 - 1, y, TileType::Wall);
+        }
+
+        // 東側の街道口：王都アルカンへ戻る旅シミュレーションの入り口
+        map.set(width as i32 - 1, 6, TileType::RoadExit);
+
+        // 中央の農村家屋
+        for x in 18..=22 {
+            map.set(x, 3, TileType::Wall);
+        }
+        for y in 1..=3 {
+            map.set(18, y, TileType::Wall);
+            map.set(22, y, TileType::Wall);
+        }
+        map.set(20, 3, TileType::DoorClosed);
+        map.set(20, 1, TileType::NpcVillager);
+
+        // 井戸まわりの街路樹
+        map.set(10, 6, TileType::Tree);
+        map.set(35, 6, TileType::Tree);
+        map.set(10, 9, TileType::Tree);
+        map.set(35, 9, TileType::Tree);
+
+        map.set(23, 8, TileType::Sign);
+        map.set(15, 8, TileType::NpcVillager);
+        map.set(30, 4, TileType::NpcVillager);
 
         map
     }

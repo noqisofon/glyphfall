@@ -397,6 +397,39 @@ fn get_stairs_down_pixels() -> [Pixel; 256] {
     )
 }
 
+fn get_road_exit_pixels() -> [Pixel; 256] {
+    parse_pattern(
+        [
+            "................",
+            ".BBBB......BBBB.",
+            ".BbBB......BBbB.",
+            ".BBBB......BBBB.",
+            "................",
+            "..DDDDDDDDDDDD..",
+            "..DdDDdDDdDDdD..",
+            "..DDDDDDDDDDDD..",
+            "..DDdDDDDdDDdD..",
+            "..DDDDDDDDDDDD..",
+            "................",
+            ".GGGG......GGGG.",
+            ".GgGG......GGgG.",
+            ".GGGG......GGGG.",
+            "................",
+            "................",
+        ],
+        |ch| match ch {
+            'B' => colors::DARK_GREEN,
+            'b' => colors::GREEN,
+            'D' => colors::LIGHT_BROWN,
+            'd' => colors::BROWN,
+            'G' => colors::DARK_GREEN,
+            'g' => colors::GREEN,
+            '.' => colors::DARK_GRAY,
+            _ => colors::DARK_GRAY,
+        },
+    )
+}
+
 fn get_npc_guard_pixels() -> [Pixel; 256] {
     parse_pattern(
         [
@@ -913,6 +946,7 @@ fn get_tile_pixels(tile: TileType) -> [Pixel; 256] {
         TileType::NpcGuard => get_npc_guard_pixels(),
         TileType::NpcVillager => get_npc_villager_pixels(),
         TileType::NpcSuspicious => get_npc_suspicious_pixels(),
+        TileType::RoadExit => get_road_exit_pixels(),
         TileType::DungeonWall => get_dungeon_wall_pixels(),
         TileType::DungeonFloor => get_dungeon_floor_pixels(),
         TileType::IronGateClosed => get_iron_gate_closed_pixels(),

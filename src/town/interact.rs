@@ -166,6 +166,9 @@ fn resolve_examine(map: &mut TownMap, x: i32, y: i32, tile: Option<TileType>) ->
             InteractOutcome::Message("魔物の気配がする……油断できない。".into())
         }
         TileType::Floor | TileType::DungeonFloor => InteractOutcome::Message("なにもない。".into()),
+        TileType::RoadExit => {
+            InteractOutcome::Message("他の町・村へ続く街道だ。歩いて踏み出せば旅立てる。".into())
+        }
     }
 }
 

@@ -8,14 +8,14 @@ pub mod pixel_art;
 pub use dialogue::{DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, SHOP_ITEMS};
 pub use interact::{CommandKind, InteractOutcome, TargetKind};
 pub use map::AreaId;
-pub use movement::{try_move_player, MoveOutcome};
+pub use movement::{try_move_player, MoveOutcome, Position};
 
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use fov::FovMap;
 use map::{TileType, TownMap};
-use movement::{Facing, FollowerHistory, Position};
+use movement::{Facing, FollowerHistory};
 use pixel_art::{render_town_to_texture, TEXTURE_HEIGHT, TEXTURE_WIDTH};
 
 #[derive(Resource)]
@@ -98,6 +98,7 @@ impl TownState {
         self.map = match new_area {
             AreaId::Town => TownMap::create_arkan_capital(),
             AreaId::DungeonB1F => TownMap::create_dungeon_b1f(),
+            AreaId::Village => TownMap::create_suzukake_village(),
         };
         self.player_pos = spawn_pos;
         self.followers.reset(spawn_pos);

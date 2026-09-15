@@ -62,6 +62,13 @@ pub enum MoveOutcome {
         spawn_pos: Position,
         message: String,
     },
+    /// 街道口（`RoadExit`）に接触した。即座に移動はせず、呼び出し側が移動姿勢選択
+    /// （ADR-0004）→ 突発イベント発生ロール（ADR-0013）を経てから`destination`へ
+    /// 実際に移動するかどうかを決める。
+    RequestTravel {
+        destination: AreaId,
+        spawn_pos: Position,
+    },
 }
 
 pub fn try_move_player(
@@ -140,6 +147,17 @@ pub fn try_move_player(
                 }
             }
         }
+        TileType::RoadExit => match current_area {
+            AreaId::Town => MoveOutcome::RequestTravel {
+                destination: AreaId::Village,
+                spawn_pos: Position { x: 44, y: 6 },
+            },
+            AreaId::Village => MoveOutcome::RequestTravel {
+                destination: AreaId::Town,
+                spawn_pos: Position { x: 1, y: 6 },
+            },
+            AreaId::DungeonB1F => MoveOutcome::Blocked { message: None },
+        },
         TileType::DoorClosed => {
             map.set(target_x, target_y, TileType::DoorOpen);
             MoveOutcome::Blocked {
