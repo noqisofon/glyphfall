@@ -6,8 +6,10 @@ pub use view::*;
 
 use bevy::prelude::*;
 use crate::{
-    battle::BattleState, party::PartyState, town::TownState, AppMode, CommandMenuState,
-    PlayerInventory, TravelState,
+    battle::{BattleState, BattleStateRes},
+    party::{PartyState, PartyStateRes, PlayerInventory, PlayerInventoryRes},
+    town::{TownState, TownStateRes},
+    AppMode, CommandMenuState, TravelState,
 };
 use view::{format_left_window, format_right_window, format_status_header};
 
@@ -74,13 +76,13 @@ pub fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
-    party: Res<PartyState>,
+    party: Res<PartyStateRes>,
     town_mode: Res<AppMode>,
-    inv: Res<PlayerInventory>,
-    battle: Res<BattleState>,
+    inv: Res<PlayerInventoryRes>,
+    battle: Res<BattleStateRes>,
 ) {
     let font = asset_server.load(FONT_PATH);
-    let town = TownState::new(&mut images);
+    let town = TownStateRes::new(&mut images);
 
     commands.spawn(Camera2d);
 
@@ -166,7 +168,7 @@ pub fn spawn_status_window(
         });
 }
 
-pub fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &TownState) {
+pub fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: &TownStateRes) {
     let inner_cols = 46;
     let inner_rows = 13;
     let outer_cols = inner_cols + 2;

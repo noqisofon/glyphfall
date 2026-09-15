@@ -6,15 +6,13 @@ mod party;
 mod town;
 mod ui;
 
-use battle::{create_default_monsters, BattleState};
-use event::{SuddenEventHistory, SuddenEventRegistry};
+use battle::{create_default_monsters, BattleState, BattleStateRes};
+use event::{SuddenEventHistoryRes, SuddenEventRegistryRes};
 pub use party::{
-    Influence, MentalState, PartyMember, Personality, PartyState, PlayerInventory, PlayerResource,
-    PlayerSkills, ReserveRoster,
+    Influence, MentalState, PartyMember, PartyStateRes, Personality, PlayerInventoryRes,
+    PlayerResourceRes, PlayerSkills, ReserveRosterRes,
 };
-pub use town::{
-    AreaId, CommandKind, DialogueSession, Position, TownState, SHOP_ITEMS,
-};
+pub use town::{AreaId, CommandKind, DialogueSession, Position, TownStateRes, SHOP_ITEMS};
 pub use ui::palette;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
@@ -110,28 +108,32 @@ fn main() {
         }))
         .insert_resource(ClearColor(palette::BG))
         .insert_resource(AppMode::Town)
-        .insert_resource(PlayerInventory::default())
+        .insert_resource(PlayerInventoryRes::default())
         .insert_resource(ActiveDialogue::default())
         .insert_resource(CommandMenuState::default())
         .insert_resource(TravelState::default())
-        .insert_resource(SuddenEventRegistry::travel_default())
-        .insert_resource(SuddenEventHistory::default())
-        .insert_resource(PlayerResource {
+        .insert_resource(SuddenEventRegistryRes(
+            glyphfall_core::event::SuddenEventRegistry::travel_default(),
+        ))
+        .insert_resource(SuddenEventHistoryRes::default())
+        .insert_resource(PlayerResourceRes(glyphfall_core::party::PlayerResource {
             skills: PlayerSkills {
                 magic_knowledge: 45,
                 keen_eye: 55,
             },
-        })
-        .insert_resource(BattleState::new(create_default_monsters()))
-        .insert_resource(ReserveRoster::new(vec![PartyMember::new(
-            "騎士アルヴィン",
-            "きし",
-            Influence::new_supernatural(115), // 魅了による異常値
-            MentalState::Charmed,
-            Personality::Loyal,
-        )
-        .with_stats(40, 15)]))
-        .insert_resource(PartyState {
+        }))
+        .insert_resource(BattleStateRes(BattleState::new(create_default_monsters())))
+        .insert_resource(ReserveRosterRes(glyphfall_core::party::ReserveRoster::new(vec![
+            PartyMember::new(
+                "騎士アルヴィン",
+                "きし",
+                Influence::new_supernatural(115), // 魅了による異常値
+                MentalState::Charmed,
+                Personality::Loyal,
+            )
+            .with_stats(40, 15),
+        ])))
+        .insert_resource(PartyStateRes(glyphfall_core::party::PartyState {
             selected_index: 0,
             debug_mode: false,
             members: vec![
@@ -161,7 +163,7 @@ fn main() {
                 )
                 .with_stats(22, 25),
             ],
-        })
+        }))
         .add_event::<ShowMessage>()
         .add_systems(Startup, ui::setup)
         .add_systems(
@@ -200,8 +202,8 @@ fn main() {
 
 fn handle_common_input(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut party: ResMut<PartyState>,
-    mut town: ResMut<TownState>,
+    mut party: ResMut<PartyStateRes>,
+    mut town: ResMut<TownStateRes>,
     mut msg_events: EventWriter<ShowMessage>,
     mut message_query: Query<(&mut ui::TypewriterMessage, &mut Text), With<ui::MessageTextNode>>,
 ) {

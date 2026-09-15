@@ -1,11 +1,6 @@
-[package]
-name = "glyphfall"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-bevy = { version = "0.15", features = ["dynamic_linking"] }
-rand = "0.8"
+[workspace]
+members = ["core", "app"]
+resolver = "2"
 
 [profile.dev]
 opt-level = 1

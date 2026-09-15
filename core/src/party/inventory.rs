@@ -1,6 +1,4 @@
-use bevy::prelude::*;
-
-#[derive(Resource, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct PlayerInventory {
     pub gold: i32,
     pub items: Vec<String>,

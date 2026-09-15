@@ -1,5 +1,3 @@
-use bevy::prelude::*;
-
 /// 素の人間（世界最強の人たらしクラス）の自然な影響度上限
 pub const MAX_NATURAL_INFLUENCE: u8 = 89;
 
@@ -7,7 +5,7 @@ pub const MAX_NATURAL_INFLUENCE: u8 = 89;
 pub const ABNORMAL_INFLUENCE_THRESHOLD: u8 = 100;
 
 /// パーティメンバーの服従度を司る隠しパラメータ
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Influence {
     /// 内部的な影響度の実数値 (0〜255)
     pub raw_value: u8,
@@ -69,7 +67,7 @@ pub enum Personality {
 }
 
 /// パーティメンバーのコンポーネント
-#[derive(Component, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct PartyMember {
     pub name: String,
     pub job: String,

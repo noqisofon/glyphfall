@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use crate::{
-    battle::BattleState,
+    battle::BattleStateRes,
     town::{DialogueLearnStage, LearnableSpan},
     ActiveDialogue, AppMode, ShowMessage,
 };
@@ -112,7 +112,7 @@ pub fn dialogue_underline_tick(
 pub fn monster_flash_tick(
     time: Res<Time>,
     mode: Res<AppMode>,
-    mut battle: ResMut<BattleState>,
+    mut battle: ResMut<BattleStateRes>,
     mut monster_query: Query<&mut TextColor, With<BattleMonsterTextNode>>,
 ) {
     if *mode == AppMode::Battle && battle.is_flashing {

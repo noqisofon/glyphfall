@@ -1,0 +1,9 @@
+[package]
+name = "glyphfall"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+glyphfall-core = { path = "../core" }
+bevy = { version = "0.15", features = ["dynamic_linking"] }
+rand = "0.8"

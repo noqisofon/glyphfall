@@ -2288,6 +2288,14 @@ name = "glyphfall"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "glyphfall-core",
+ "rand",
+]
+
+[[package]]
+name = "glyphfall-core"
+version = "0.1.0"
+dependencies = [
  "rand",
 ]
 

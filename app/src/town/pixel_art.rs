@@ -1,5 +1,4 @@
-use super::map::{TileType, TownMap};
-use super::movement::{FollowerHistory, Position};
+use glyphfall_core::town::{FollowerHistory, Position, TileType, TownMap};
 
 pub const TILE_SIZE: usize = 16;
 pub const MAP_WIDTH_TILES: usize = 46;
@@ -992,7 +991,7 @@ fn apply_shadow(pixels: &mut [Pixel; 256]) {
 /// マップ全体（46×13タイル）を 736×208 ピクセルバッファに描画
 pub fn render_town_to_texture(
     map: &TownMap,
-    fov: &super::fov::FovMap,
+    fov: &glyphfall_core::town::FovMap,
     player_pos: Position,
     followers: &FollowerHistory,
     buffer: &mut [u8],
