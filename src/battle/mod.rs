@@ -43,9 +43,6 @@ pub enum BattlePhase {
     CommandInput { member_cursor: usize },
     /// ターン解決・ログ送り中
     TurnResolving { step_cursor: usize },
-    /// 勝利（敵撃破、次の敵へ移行可能）
-    #[allow(dead_code)]
-    Victory,
     /// 敗北（主人公が倒れた）
     Defeat,
 }
@@ -200,11 +197,16 @@ impl BattleState {
                 });
             }
             PlayerBattleAction::Diagnose => {
-                // 仲間（インデックス1..4）からランダムで観察
-                let target_idx = rng.gen_range(1..members.len());
-                let report = diagnose_member(skills, &members[target_idx], rng);
+                // 仲間（インデックス1..members.len()）からランダムで観察
+                let message = if members.len() > 1 {
+                    let target_idx = rng.gen_range(1..members.len());
+                    let report = diagnose_member(skills, &members[target_idx], rng);
+                    format!("あなた「{}の様子を見よう」\n{}\n{}", members[target_idx].name, report.observation_msg, report.conclusion_msg)
+                } else {
+                    "あなた「様子を見ようにも、仲間がいない……」".to_string()
+                };
                 steps.push(BattleStep {
-                    message: format!("あなた「{}の様子を見よう」\n{}\n{}", members[target_idx].name, report.observation_msg, report.conclusion_msg),
+                    message,
                     monster_damage: None,
                     member_damage: None,
                     member_heal: None,
@@ -246,6 +248,10 @@ impl BattleState {
         for i in 1..members.len() {
             if self.current_monster().is_dead() {
                 break;
+            }
+            if members[i].hp <= 0 {
+                // 戦闘不能なメンバーは行動できない
+                continue;
             }
             let cmd = self.party_commands.get(i).and_then(|c| *c).unwrap_or(PartyCommand::Attack);
             let outcome = evaluate_command(&members[i], cmd, rng);

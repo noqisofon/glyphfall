@@ -189,20 +189,6 @@ pub fn handle_battle_input(
                 }
             }
         }
-        BattlePhase::Victory => {
-            if keyboard.just_pressed(KeyCode::Space)
-                || keyboard.just_pressed(KeyCode::Enter)
-                || keyboard.just_pressed(KeyCode::KeyB)
-            {
-                let mon_name = battle.current_monster().name.clone();
-                battle.next_monster();
-                *mode = AppMode::Town;
-                msg_events.send(ShowMessage(format!(
-                    "魔物【{}】を撃破し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。",
-                    mon_name
-                )));
-            }
-        }
         BattlePhase::Defeat => {
             if keyboard.just_pressed(KeyCode::Space)
                 || keyboard.just_pressed(KeyCode::Enter)
