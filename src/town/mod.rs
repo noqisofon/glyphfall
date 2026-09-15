@@ -38,7 +38,7 @@ impl TownState {
         let map = TownMap::create_arkan_capital();
         let fov = FovMap::new(map.width, map.height);
         let player_pos = Position { x: 20, y: 5 }; // 中央広場下
-        let followers = FollowerHistory::new(Position { x: 20, y: 6 }, 4);
+        let followers = FollowerHistory::new(Position { x: 20, y: 6 }, 3);
 
         let mut buffer = vec![0u8; TEXTURE_WIDTH * TEXTURE_HEIGHT * 4];
 

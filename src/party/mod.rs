@@ -1,13 +1,29 @@
+use bevy::prelude::*;
+
 pub mod action;
 pub mod diagnosis;
 pub mod influence;
 pub mod inventory;
 
-pub use action::{evaluate_command, ActionOutcome, PartyCommand};
+pub use action::{evaluate_command, ActionOutcome, PartyCommand, PlayerBattleAction};
 pub use diagnosis::{diagnose_member, PlayerSkills};
 pub use inventory::PlayerInventory;
 #[allow(unused_imports)]
 pub use influence::{Influence, MentalState, PartyMember, Personality, MAX_NATURAL_INFLUENCE};
+
+/// 将来のルイーダの酒場（パーティ編成所）用の控えメンバーリスト
+#[derive(Resource, Default, Debug, Clone)]
+#[allow(dead_code)]
+pub struct ReserveRoster {
+    pub members: Vec<PartyMember>,
+}
+
+#[allow(dead_code)]
+impl ReserveRoster {
+    pub fn new(members: Vec<PartyMember>) -> Self {
+        Self { members }
+    }
+}
 
 
 

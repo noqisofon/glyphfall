@@ -138,6 +138,9 @@ pub fn diagnose_member<R: Rng>(
                 Personality::Coward => {
                     "キョロキョロと周囲を警戒し、いつでも逃げられる体勢をとっている。\nビビっているだけで呪われてはいない。"
                 }
+                Personality::Player => {
+                    "自分自身の精神状態だ。冷静に周囲を見渡している。"
+                }
                 Personality::Yandere => unreachable!(),
             };
 

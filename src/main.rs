@@ -1,18 +1,18 @@
 use bevy::prelude::*;
-use rand::{thread_rng, Rng};
+use rand::thread_rng;
 
 mod battle;
 mod event;
 mod party;
 mod town;
 
-use battle::{create_default_monsters, BattleState, Monster};
+use battle::{create_default_monsters, BattlePhase, BattleState, Monster};
 use event::{
     try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistory, SuddenEventRegistry,
 };
 use party::{
-    diagnose_member, evaluate_command, ActionOutcome, Influence, MentalState, PartyCommand,
-    PartyMember, Personality, PlayerInventory, PlayerSkills,
+    Influence, MentalState, PartyCommand, PartyMember, Personality, PlayerBattleAction,
+    PlayerInventory, PlayerSkills, ReserveRoster,
 };
 use town::{
     AreaId, CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
@@ -198,44 +198,44 @@ fn main() {
                 keen_eye: 55,
             },
         })
-        .insert_resource(BattleState {
-            current_index: 0,
-            monsters: create_default_monsters(),
-            flash_timer: Timer::from_seconds(0.18, TimerMode::Once),
-            is_flashing: false,
-        })
+        .insert_resource(BattleState::new(create_default_monsters()))
+        .insert_resource(ReserveRoster::new(vec![PartyMember::new(
+            "騎士アルヴィン",
+            "きし",
+            Influence::new_supernatural(115), // 魅了による異常値
+            MentalState::Charmed,
+            Personality::Loyal,
+        )
+        .with_stats(40, 15)]))
         .insert_resource(PartyState {
             selected_index: 0,
             debug_mode: false,
             members: vec![
+                PartyMember::new_player("あなた").with_stats(20, 0),
                 PartyMember::new(
                     "戦士ガルツ",
                     "せんし",
                     Influence::new_natural(82),
                     MentalState::Normal,
                     Personality::Loyal,
-                ),
+                )
+                .with_stats(35, 10),
                 PartyMember::new(
                     "遊び人ロロ",
                     "あそびにん",
                     Influence::new_natural(45),
                     MentalState::Normal,
                     Personality::Slacker,
-                ),
+                )
+                .with_stats(25, 10),
                 PartyMember::new(
                     "魔法使いミレイ",
                     "まほうつかい",
                     Influence::new_natural(88), // 自然上限寸前の素の執着
                     MentalState::Normal,
                     Personality::Yandere,
-                ),
-                PartyMember::new(
-                    "騎士アルヴィン",
-                    "きし",
-                    Influence::new_supernatural(115), // 魅了による異常値
-                    MentalState::Charmed,
-                    Personality::Loyal,
-                ),
+                )
+                .with_stats(22, 25),
             ],
         })
         .add_event::<ShowMessage>()
@@ -277,6 +277,7 @@ fn setup(
     party: Res<PartyState>,
     town_mode: Res<AppMode>,
     inv: Res<PlayerInventory>,
+    battle: Res<BattleState>,
 ) {
     let font = asset_server.load(FONT_PATH);
     let town = TownState::new(&mut images);
@@ -306,6 +307,8 @@ fn setup(
                 root,
                 font.clone(),
                 &inv,
+                &battle,
+                &party,
                 "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[Z]キーでコマンドを開き、話したい相手や調べたい対象の方向を選ぼう。",
             );
         });
@@ -347,6 +350,7 @@ fn format_status_header(
             MentalState::Cursed => "呪縛(Cursed)",
         };
         let personality_str = match member.personality {
+            Personality::Player => "プレイヤー(Player)",
             Personality::Loyal => "忠実(Loyal)",
             Personality::Slacker => "遊び人(Slacker)",
             Personality::Coward => "臆病(Coward)",
@@ -361,7 +365,7 @@ fn format_status_header(
         match mode {
             AppMode::Town => {
                 header.push_str(&format!(
-                    "  [{}] 所持金: {}G | 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫) 騎士(白)\n",
+                    "  [{}] 所持金: {}G | 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫)\n",
                     town.current_area.name(),
                     inv.gold,
                     torch_str
@@ -408,7 +412,12 @@ fn format_status_header(
                 ));
             }
             AppMode::Battle => {
-                header.push_str("  [地下封鎖迷宮・戦闘交戦中] (F1キーで開発用隠しパラメータを表示)\n");
+                let mut party_summary = String::new();
+                for (i, m) in party.members.iter().enumerate() {
+                    let sep = if i > 0 { " | " } else { "" };
+                    party_summary.push_str(&format!("{}{}:{}/{}", sep, m.name, m.hp, m.max_hp));
+                }
+                header.push_str(&format!("  [戦闘交戦中] {}\n", party_summary));
             }
             AppMode::Travel => {
                 header.push_str(&format!(
@@ -449,7 +458,7 @@ fn format_status_header(
             header.push_str("操作: [1/Enter]とまる(50G) | [3/Esc]やめる");
         }
         AppMode::Battle => {
-            header.push_str("操作: [1]たたかう | [2]みをまもる | [3]すてみ | [4]観察 | [N]敵切替 | [B]街へ帰還");
+            header.push_str("操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行 | [N]敵切替 | [B]街へ帰還");
         }
         AppMode::Travel => {
             header.push_str("操作: [1]慎重に | [2]普通に | [3]大胆に | [Esc]やめる");
@@ -466,6 +475,8 @@ fn format_left_window(
     command_menu: &CommandMenuState,
     facing_target: TargetKind,
     travel: &TravelState,
+    battle: &BattleState,
+    party: &PartyState,
 ) -> String {
     match mode {
         AppMode::Interact => match command_menu.stage {
@@ -522,10 +533,31 @@ fn format_left_window(
             out
         }
         AppMode::Battle => {
-            format!(
-                "【所持アイテム】\n・やくそう\n・特やくそう\n所持金: {}G",
-                inv.gold
-            )
+            match &battle.phase {
+                BattlePhase::CommandInput { member_cursor } => {
+                    let cursor = *member_cursor;
+                    if cursor == 0 {
+                        "【あなたの行動】\n[1]たたかう\n[2]みをまもる\n[3]どうぐ(草)\n[4]観察 5:逃走".into()
+                    } else if cursor < party.members.len() {
+                        let member = &party.members[cursor];
+                        format!(
+                            "【{}へ指示】\n[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]じゅもん",
+                            member.name
+                        )
+                    } else {
+                        "【指示決定】\nターン開始準備完了".into()
+                    }
+                }
+                BattlePhase::TurnResolving { step_cursor } => {
+                    format!(
+                        "【ターン進行中】\n進捗: {}/{}\n\n[Space]で次へ",
+                        step_cursor + 1,
+                        battle.turn_steps.len().max(1)
+                    )
+                }
+                BattlePhase::Victory => "【勝利！】\n魔物をたおした！\n\n[Space]次の敵\n[B]街へ帰還".into(),
+                BattlePhase::Defeat => "【全滅……】\nあなたは力尽きた\n\n[B]街へ逃走\n(宿屋で治療)".into(),
+            }
         }
         AppMode::Travel => {
             format!(
@@ -540,6 +572,7 @@ fn format_right_window(
     mode: AppMode,
     dialogue: &Option<DialogueSession>,
     command_menu: &CommandMenuState,
+    battle: &BattleState,
 ) -> String {
     match mode {
         AppMode::Interact => match command_menu.stage {
@@ -568,7 +601,20 @@ fn format_right_window(
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
         AppMode::Inn => "[1]とまる(50G)\n[3]やめる\n\n(HP/MP全回復)".into(),
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
-        AppMode::Battle => "[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]観察\n[B]街へ帰還".into(),
+        AppMode::Battle => {
+            match &battle.phase {
+                BattlePhase::CommandInput { member_cursor } => {
+                    if *member_cursor == 0 {
+                        "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into()
+                    } else {
+                        "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into()
+                    }
+                }
+                BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),
+                BattlePhase::Victory => "[Space]次敵\n[B]街へ帰還\n\n(戦闘勝利)".into(),
+                BattlePhase::Defeat => "[B]街へ帰還\n\n(敗北)".into(),
+            }
+        }
         AppMode::Travel => "[1]慎重に\n[2]普通に\n[3]大胆に\n[Esc]やめる".into(),
     }
 }
@@ -696,6 +742,8 @@ fn spawn_tri_split_window(
     parent: &mut ChildBuilder,
     font: Handle<Font>,
     inv: &PlayerInventory,
+    battle: &BattleState,
+    party: &PartyState,
     default_msg: &str,
 ) {
     let total_width = (15 + 22 + 11) as f32 * CELL_PX; // 48列 = 864.0 px
@@ -721,6 +769,8 @@ fn spawn_tri_split_window(
                     &CommandMenuState::default(),
                     TargetKind::Nothing,
                     &TravelState::default(),
+                    battle,
+                    party,
                 ),
             );
 
@@ -733,7 +783,7 @@ fn spawn_tri_split_window(
                 font.clone(),
                 9,
                 5,
-                &format_right_window(AppMode::Town, &None, &CommandMenuState::default()),
+                &format_right_window(AppMode::Town, &None, &CommandMenuState::default(), battle),
             );
         });
 }
@@ -1454,123 +1504,204 @@ fn handle_inn_input(
 
 fn handle_battle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
-    party: Res<PartyState>,
+    mut mode: ResMut<AppMode>,
+    mut party: ResMut<PartyState>,
     player: Res<PlayerResource>,
     mut battle: ResMut<BattleState>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
     let mut rng = thread_rng();
 
+    // [B]: いつでも戦闘離脱（街へ帰還）
+    if keyboard.just_pressed(KeyCode::KeyB) {
+        *mode = AppMode::Town;
+        battle.reset_turn_commands();
+        msg_events.send(ShowMessage("戦闘を離脱し、街へ戻った。".into()));
+        return;
+    }
+
     // [N]: モンスター切り替え（テスト用）
     if keyboard.just_pressed(KeyCode::KeyN) {
         battle.next_monster();
         let mon = battle.current_monster();
-        msg_events.send(ShowMessage(format!("あらたな　魔物【{}】が　あらわれた！", mon.name)));
+        msg_events.send(ShowMessage(format!(
+            "あらたな　魔物【{}】が　あらわれた！\nあなたの行動を選択してください。",
+            mon.name
+        )));
+        return;
     }
 
-    // [1]: 「たたかう」
-    if keyboard.just_pressed(KeyCode::Digit1) {
-        let member = &party.members[party.selected_index];
-        let outcome = evaluate_command(member, PartyCommand::Attack, &mut rng);
-        match outcome {
-            ActionOutcome::Obeyed { action_msg } => {
-                let damage: i32 = rng.gen_range(8..=14);
-                let (mon_name, is_dead) = battle.apply_damage(damage);
-
-                let mut msg = format!(
-                    "{}に「たたかう」よう　指示した！\n{}\n{}に {}の ダメージを与えた！",
-                    member.name, action_msg, mon_name, damage
-                );
-
-                if is_dead {
-                    msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                    battle.next_monster();
-                    let next_mon = battle.current_monster();
-                    msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                }
-                msg_events.send(ShowMessage(msg));
-            }
-            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                if member.personality == Personality::Yandere {
-                    let damage: i32 = rng.gen_range(16..=22);
-                    let (mon_name, is_dead) = battle.apply_damage(damage);
-
-                    let mut msg = format!(
-                        "{}に「たたかう」よう　指示した！\n{}\n{}\nなんと　{}に {}の 大ダメージ！",
-                        member.name, reason_msg, action_msg, mon_name, damage
-                    );
-                    if is_dead {
-                        msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                        battle.next_monster();
-                        let next_mon = battle.current_monster();
-                        msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                    }
-                    msg_events.send(ShowMessage(msg));
+    match battle.phase.clone() {
+        BattlePhase::CommandInput { member_cursor } => {
+            if member_cursor == 0 {
+                // あなたの行動選択
+                let chosen = if keyboard.just_pressed(KeyCode::Digit1) {
+                    Some(PlayerBattleAction::Attack)
+                } else if keyboard.just_pressed(KeyCode::Digit2) {
+                    Some(PlayerBattleAction::Defend)
+                } else if keyboard.just_pressed(KeyCode::Digit3) {
+                    Some(PlayerBattleAction::UseItem)
+                } else if keyboard.just_pressed(KeyCode::Digit4) {
+                    Some(PlayerBattleAction::Diagnose)
+                } else if keyboard.just_pressed(KeyCode::Digit5) {
+                    Some(PlayerBattleAction::Flee)
                 } else {
+                    None
+                };
+
+                if let Some(action) = chosen {
+                    battle.player_action = Some(action);
+                    battle.phase = BattlePhase::CommandInput { member_cursor: 1 };
+                    let next_name = &party.members[1].name;
                     msg_events.send(ShowMessage(format!(
-                        "{}に「たたかう」よう　指示した！\n{}\n{}",
-                        member.name, reason_msg, action_msg
+                        "あなた:「{}」を選択した。\n続いて、{} への指示を選択してください。",
+                        action.name(),
+                        next_name
                     )));
                 }
-            }
-        };
-    }
+            } else if member_cursor < party.members.len() {
+                // 仲間への指示選択
+                let chosen = if keyboard.just_pressed(KeyCode::Digit1) {
+                    Some(PartyCommand::Attack)
+                } else if keyboard.just_pressed(KeyCode::Digit2) {
+                    Some(PartyCommand::Defend)
+                } else if keyboard.just_pressed(KeyCode::Digit3) {
+                    Some(PartyCommand::DesperateAttack)
+                } else if keyboard.just_pressed(KeyCode::Digit4) {
+                    Some(PartyCommand::CastSpell)
+                } else {
+                    None
+                };
 
-    // [2]: 「みをまもる」
-    if keyboard.just_pressed(KeyCode::Digit2) {
-        let member = &party.members[party.selected_index];
-        let outcome = evaluate_command(member, PartyCommand::Defend, &mut rng);
-        let msg = match outcome {
-            ActionOutcome::Obeyed { action_msg } => {
-                format!("{}に「みをまもる」よう　指示した。\n{}", member.name, action_msg)
-            }
-            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                format!(
-                    "{}に「みをまもる」よう　指示した！\n{}\n{}",
-                    member.name, reason_msg, action_msg
-                )
-            }
-        };
-        msg_events.send(ShowMessage(msg));
-    }
+                if let Some(cmd) = chosen {
+                    battle.party_commands[member_cursor] = Some(cmd);
+                    let current_name = party.members[member_cursor].name.clone();
 
-    // [3]: 「すてみ」
-    if keyboard.just_pressed(KeyCode::Digit3) {
-        let member = &party.members[party.selected_index];
-        let outcome = evaluate_command(member, PartyCommand::DesperateAttack, &mut rng);
-        match outcome {
-            ActionOutcome::Obeyed { action_msg } => {
-                let damage: i32 = rng.gen_range(25..=35);
-                let (mon_name, is_dead) = battle.apply_damage(damage);
-
-                let mut msg = format!(
-                    "{}に「すてみ」を　命じた！\n{}\n会心の一撃！　{}に {}の 痛恨のダメージ！",
-                    member.name, action_msg, mon_name, damage
-                );
-
-                if is_dead {
-                    msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                    battle.next_monster();
-                    let next_mon = battle.current_monster();
-                    msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                    if member_cursor + 1 < party.members.len() {
+                        let next_idx = member_cursor + 1;
+                        battle.phase = BattlePhase::CommandInput {
+                            member_cursor: next_idx,
+                        };
+                        let next_name = &party.members[next_idx].name;
+                        msg_events.send(ShowMessage(format!(
+                            "{}:「{}」を指示した。\n続いて、{} への指示を選択してください。",
+                            current_name,
+                            cmd.name(),
+                            next_name
+                        )));
+                    } else {
+                        // 全員の指示が決定！ターン解決を実行
+                        battle.build_turn_resolution(&mut party.members, &player.skills, &mut rng);
+                        if let Some(first_step) = battle.turn_steps.first() {
+                            let step_msg = first_step.message.clone();
+                            if first_step.monster_damage.is_some() {
+                                battle.is_flashing = true;
+                                battle.flash_timer.reset();
+                            }
+                            msg_events.send(ShowMessage(format!(
+                                "【ターン開始！】全員の指示が揃った！\n\n{}\n([Space]で次へ)",
+                                step_msg
+                            )));
+                        }
+                    }
+                } else if keyboard.just_pressed(KeyCode::Escape) {
+                    // 1つ前のメンバーに戻る
+                    let prev_idx = member_cursor - 1;
+                    battle.phase = BattlePhase::CommandInput {
+                        member_cursor: prev_idx,
+                    };
+                    let name = &party.members[prev_idx].name;
+                    msg_events.send(ShowMessage(format!("{} の行動選択に戻りました。", name)));
                 }
-                msg_events.send(ShowMessage(msg));
             }
-            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+        }
+        BattlePhase::TurnResolving { step_cursor } => {
+            if keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter) {
+                let current_step = &battle.turn_steps[step_cursor];
+                if current_step.monster_defeated {
+                    battle.phase = BattlePhase::Victory;
+                    msg_events.send(ShowMessage(format!(
+                        "魔物【{}】を撃破した！\n戦闘に勝利した！\n[Space]で次の魔物へ、[B]で街へ帰還",
+                        battle.current_monster().name
+                    )));
+                    return;
+                }
+                if current_step.player_defeated {
+                    battle.phase = BattlePhase::Defeat;
+                    msg_events.send(ShowMessage(
+                        "あなた（一般人）は力尽きてしまった……！\nパーティは壊滅した。\n[B]キーで街へ逃げ帰ってください。".into(),
+                    ));
+                    return;
+                }
+                if current_step.flee_success {
+                    *mode = AppMode::Town;
+                    battle.reset_turn_commands();
+                    msg_events.send(ShowMessage("脱出に成功し、街へ逃げ帰った！".into()));
+                    return;
+                }
+
+                let next_cursor = step_cursor + 1;
+                if next_cursor < battle.turn_steps.len() {
+                    let has_damage = battle.turn_steps[next_cursor].monster_damage.is_some();
+                    let step_msg = battle.turn_steps[next_cursor].message.clone();
+                    battle.phase = BattlePhase::TurnResolving {
+                        step_cursor: next_cursor,
+                    };
+                    if has_damage {
+                        battle.is_flashing = true;
+                        battle.flash_timer.reset();
+                    }
+                    msg_events.send(ShowMessage(format!("{}\n([Space]で次へ)", step_msg)));
+                } else {
+                    // 全ステップ再生完了
+                    if battle.current_monster().is_dead() {
+                        battle.phase = BattlePhase::Victory;
+                        msg_events.send(ShowMessage(format!(
+                            "魔物【{}】を撃破した！\n戦闘に勝利した！\n[Space]で次の魔物へ、[B]で街へ帰還",
+                            battle.current_monster().name
+                        )));
+                    } else if party.members[0].hp <= 0 {
+                        battle.phase = BattlePhase::Defeat;
+                        msg_events.send(ShowMessage(
+                            "あなた（一般人）は力尽きてしまった……！\nパーティは壊滅した。\n[B]キーで街へ逃げ帰ってください。".into(),
+                        ));
+                    } else {
+                        // 次のターンへ
+                        battle.reset_turn_commands();
+                        msg_events.send(ShowMessage(
+                            "次のターン！ あなたの行動を選択してください。".into(),
+                        ));
+                    }
+                }
+            }
+        }
+        BattlePhase::Victory => {
+            if keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter) {
+                battle.next_monster();
+                let mon = battle.current_monster();
                 msg_events.send(ShowMessage(format!(
-                    "{}に「すてみ」を　命じた！\n{}\n{}",
-                    member.name, reason_msg, action_msg
+                    "あらたな魔物【{}】があらわれた！\nあなたの行動を選択してください。",
+                    mon.name
                 )));
             }
-        };
-    }
-
-    // [4]: 「観察する」
-    if keyboard.just_pressed(KeyCode::Digit4) {
-        let member = &party.members[party.selected_index];
-        let report = diagnose_member(&player.skills, member, &mut rng);
-        let msg = format!("{}\n{}", report.observation_msg, report.conclusion_msg);
-        msg_events.send(ShowMessage(msg));
+        }
+        BattlePhase::Defeat => {
+            if keyboard.just_pressed(KeyCode::Space)
+                || keyboard.just_pressed(KeyCode::Enter)
+                || keyboard.just_pressed(KeyCode::KeyB)
+            {
+                // 宿屋で全員全快して街へ戻る
+                for m in &mut party.members {
+                    m.hp = m.max_hp;
+                    m.mp = m.max_mp;
+                }
+                *mode = AppMode::Town;
+                battle.reset_turn_commands();
+                msg_events.send(ShowMessage(
+                    "教会の神父に助け出され、宿屋で目覚めた……\n（HP/MP全回復）".into(),
+                ));
+            }
+        }
     }
 }
 
@@ -1734,6 +1865,8 @@ fn update_tri_split_windows_system(
     command_menu: Res<CommandMenuState>,
     town: Res<TownState>,
     travel: Res<TravelState>,
+    battle: Res<BattleState>,
+    party: Res<PartyState>,
     mut left_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
     mut right_query: Query<&mut Text, (With<RightWindowTextNode>, Without<LeftWindowTextNode>)>,
 ) {
@@ -1743,6 +1876,8 @@ fn update_tri_split_windows_system(
         || command_menu.is_changed()
         || town.is_changed()
         || travel.is_changed()
+        || battle.is_changed()
+        || party.is_changed()
     {
         let facing_target = town.facing_target_kind();
         if let Ok(mut text) = left_query.get_single_mut() {
@@ -1753,10 +1888,12 @@ fn update_tri_split_windows_system(
                 &command_menu,
                 facing_target,
                 &travel,
+                &battle,
+                &party,
             ));
         }
         if let Ok(mut text) = right_query.get_single_mut() {
-            *text = Text::new(format_right_window(*mode, &dialogue.0, &command_menu));
+            *text = Text::new(format_right_window(*mode, &dialogue.0, &command_menu, &battle));
         }
     }
 }

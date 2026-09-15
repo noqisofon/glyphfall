@@ -56,6 +56,8 @@ pub enum MentalState {
 #[allow(dead_code)]
 pub enum Personality {
 
+    /// プレイヤー自身：自らの意志で行動する
+    Player,
     /// 忠実：誠実で命令に従いやすいが、上限89の制約は受ける
     Loyal,
     /// 遊び人：気まぐれでサボり率が高く、影響度が高くてもふざける
@@ -78,6 +80,7 @@ pub struct PartyMember {
     pub max_hp: i32,
     pub mp: i32,
     pub max_mp: i32,
+    pub is_player: bool,
 }
 
 impl PartyMember {
@@ -98,6 +101,30 @@ impl PartyMember {
             max_hp: 30,
             mp: 10,
             max_mp: 10,
+            is_player: false,
         }
+    }
+
+    pub fn new_player(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            job: "一般人".into(),
+            influence: Influence::new_natural(MAX_NATURAL_INFLUENCE),
+            mental_state: MentalState::Normal,
+            personality: Personality::Player,
+            hp: 20,
+            max_hp: 20,
+            mp: 0,
+            max_mp: 0,
+            is_player: true,
+        }
+    }
+
+    pub fn with_stats(mut self, hp: i32, mp: i32) -> Self {
+        self.hp = hp;
+        self.max_hp = hp;
+        self.mp = mp;
+        self.max_mp = mp;
+        self
     }
 }

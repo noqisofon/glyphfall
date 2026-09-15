@@ -1,6 +1,33 @@
 use rand::Rng;
 use super::influence::{PartyMember, Personality, MentalState};
 
+/// プレイヤー（あなた）自身の戦闘行動
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerBattleAction {
+    /// 「たたかう」（パンピーの微力な攻撃）
+    Attack,
+    /// 「みをまもる」（被ダメージ軽減）
+    Defend,
+    /// 「どうぐ」（やくそう等で味方を治療）
+    UseItem,
+    /// 「かんさつ」（仲間の精神状態を観察）
+    Diagnose,
+    /// 「にげる」（戦闘から逃走を試みる）
+    Flee,
+}
+
+impl PlayerBattleAction {
+    pub fn name(&self) -> &'static str {
+        match self {
+            PlayerBattleAction::Attack => "たたかう",
+            PlayerBattleAction::Defend => "みをまもる",
+            PlayerBattleAction::UseItem => "どうぐ",
+            PlayerBattleAction::Diagnose => "かんさつ",
+            PlayerBattleAction::Flee => "にげる",
+        }
+    }
+}
+
 /// プレイヤーから仲間への指示
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -18,13 +45,11 @@ pub enum PartyCommand {
 #[allow(dead_code)]
 impl PartyCommand {
     pub fn name(&self) -> &'static str {
-
         match self {
             PartyCommand::Attack => "たたかう",
             PartyCommand::Defend => "みをまもる",
             PartyCommand::DesperateAttack => "すてみ",
             PartyCommand::CastSpell => "じゅもん",
-
         }
     }
 
@@ -59,6 +84,12 @@ pub fn evaluate_command<R: Rng>(
     command: PartyCommand,
     rng: &mut R,
 ) -> ActionOutcome {
+    if member.is_player {
+        return ActionOutcome::Obeyed {
+            action_msg: format!("{}は　指示どおり行動した！", member.name),
+        };
+    }
+
     // 基礎成功率は隠し影響度
     let base_rate = member.influence.raw_value as i32;
 
@@ -67,6 +98,7 @@ pub fn evaluate_command<R: Rng>(
 
     // 性格による補正
     let personality_mod = match member.personality {
+        Personality::Player => 100,
         Personality::Loyal => 15,
         Personality::Slacker => -30,
         Personality::Coward => {
@@ -130,6 +162,9 @@ fn generate_disobedient_behavior<R: Rng>(
     rng: &mut R,
 ) -> (String, String) {
     match member.personality {
+        Personality::Player => {
+            ("".to_string(), format!("{}は　指示どおり行動した！", member.name))
+        }
         Personality::Slacker => {
             let roll = rng.gen_range(0..3);
             let reason = if command == PartyCommand::Defend {
