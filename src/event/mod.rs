@@ -136,6 +136,9 @@ impl SuddenEventHistory {
 /// （会話・戦闘突入・仲間加入判定など）はこれを受け取った呼び出し側の責務とする。
 #[derive(Clone, Copy, Debug)]
 pub struct SuddenEventTriggered {
+    /// 呼び出し側での将来のログ出力・条件分岐（例: 特定イベントIDだけ個別演出を出す）
+    /// のために残してあるが、現状の呼び出し側は`category`しか見ていない。
+    #[allow(dead_code)]
     pub id: &'static str,
     pub category: SuddenEventCategory,
     pub message: &'static str,

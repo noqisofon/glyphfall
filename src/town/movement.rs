@@ -129,6 +129,8 @@ pub fn try_move_player(
                         message: "さらに深層への下り階段に足を踏み入れた！\n地下奥深くから強大な魔物の咆哮が響く……！([B]キーで戦闘突入)".into(),
                     }
                 }
+                // 村には地下迷宮への階段は存在しない（到達不能なタイルのため実質デッドコード）。
+                AreaId::Village => MoveOutcome::Blocked { message: None },
             }
         }
         TileType::StairsUp => {
@@ -140,11 +142,9 @@ pub fn try_move_player(
                         message: "階段を駆け上がり、夜風が吹き抜ける王都アルカンへ無事に生還した！".into(),
                     }
                 }
-                AreaId::Town => {
-                    MoveOutcome::Blocked {
-                        message: Some("見上げるような高い塔の扉は固く閉ざされている。".into()),
-                    }
-                }
+                AreaId::Town | AreaId::Village => MoveOutcome::Blocked {
+                    message: Some("見上げるような高い塔の扉は固く閉ざされている。".into()),
+                },
             }
         }
         TileType::RoadExit => match current_area {
