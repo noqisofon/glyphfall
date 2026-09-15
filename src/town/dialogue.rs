@@ -53,41 +53,90 @@ pub const SHOP_ITEMS: [ShopItem; 4] = [
     },
 ];
 
+/// メッセージ本文（`current_text`）中で、覚えられる対象語が占める文字範囲。
+/// 文字インデックスは`current_text.chars()`基準（改行も1文字に数える）。
+/// 覚える文字列自体はここでは保持せず、常に`current_text`からスライスして得る
+/// （下線位置と覚えた単語が構造的にズレないようにするため。ADR-0012）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LearnableSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl LearnableSpan {
+    pub fn slice(&self, text: &str) -> String {
+        text.chars().skip(self.start).take(self.end - self.start).collect()
+    }
+}
+
+/// テキスト中から`words`の各語句を検索し、見つかった範囲を`LearnableSpan`として返す。
+/// 見つからない語句は黙って無視する（下線が付かないだけで、致命的な不整合にはしない）。
+fn spans_for(text: &str, words: &[&str]) -> Vec<LearnableSpan> {
+    let chars: Vec<char> = text.chars().collect();
+    words
+        .iter()
+        .filter_map(|word| {
+            let word_chars: Vec<char> = word.chars().collect();
+            if word_chars.is_empty() || word_chars.len() > chars.len() {
+                return None;
+            }
+            chars
+                .windows(word_chars.len())
+                .position(|w| w == word_chars.as_slice())
+                .map(|start| LearnableSpan {
+                    start,
+                    end: start + word_chars.len(),
+                })
+        })
+        .collect()
+}
+
+/// 「おぼえる」コマンドの進行段階（ADR-0011の`CommandMenuStage`と同様の2段階パターン）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DialogueLearnStage {
+    #[default]
+    Talking,
+    ChoosingLearnTarget {
+        cursor: usize,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct DialogueSession {
     pub partner: DialoguePartner,
     pub selected_topic_index: usize,
     pub selected_shop_index: usize,
     pub current_text: String,
-    pub learnable_topic: Option<String>,
+    pub learnable_spans: Vec<LearnableSpan>,
+    pub learn_stage: DialogueLearnStage,
 }
 
 impl DialogueSession {
     pub fn start(partner: DialoguePartner) -> Self {
-        let (initial_text, learnable) = match partner {
+        let (initial_text, learnable_spans) = match partner {
             DialoguePartner::Inn => (
                 "宿屋の主人「旅の方かい？\n一泊50ゴールドで仲間全員の体力を全快できるよ。[1]で宿泊するかい？」".into(),
-                None,
+                Vec::new(),
             ),
             DialoguePartner::Shop => (
                 "道具屋「へいらっしゃい！何にするかい？\n[W/S]で選んで[1]で購入、[3]で店を出られるぜ」".into(),
-                None,
+                Vec::new(),
             ),
             DialoguePartner::Tavern => (
                 "呑兵衛「ヒック…王都の酒は最高だな！\n何か気になることでもあんのかい？話題を振ってくれな」".into(),
-                None,
+                Vec::new(),
             ),
             DialoguePartner::Guard => (
                 "王都衛兵「止まれ！この先は立ち入り禁止の封鎖迷宮だ！\n何か事件の手がかりでも掴んだのか？」".into(),
-                None,
+                Vec::new(),
             ),
             DialoguePartner::Villager => (
                 "街の女性「こんにちは、旅の冒険者さん。\n王都アルカンについて何かお知りになりたいですか？」".into(),
-                None,
+                Vec::new(),
             ),
             DialoguePartner::Suspicious => (
                 "怪しい男「ヒヒッ…あんた、裏の事情に首を突っ込みたいのかい？\nいい情報を持ってるぜ…」".into(),
-                None,
+                Vec::new(),
             ),
         };
 
@@ -96,84 +145,88 @@ impl DialogueSession {
             selected_topic_index: 0,
             selected_shop_index: 0,
             current_text: initial_text,
-            learnable_topic: learnable,
+            learnable_spans,
+            learn_stage: DialogueLearnStage::default(),
         }
     }
 
     /// 話題を振る
     pub fn ask_topic(&mut self, topic: &str) {
+        // 新しい話題を振ったら、進行中の「おぼえる」候補選択は必ずキャンセルする。
+        self.learn_stage = DialogueLearnStage::Talking;
+
         match self.partner {
             DialoguePartner::Guard => match topic {
                 "王都アルカン" => {
                     self.current_text = "王都衛兵「王都アルカンは平和な街だ。だが南東の地下迷宮だけは絶対近寄るなよ」".into();
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
                 "封魔の迷宮" => {
-                    self.current_text = "王都衛兵「かつて大魔王軍を封じた迷宮だ。奥深くには【封印の祭壇】があると言われている…」".into();
-                    self.learnable_topic = Some("封印の祭壇".into());
+                    self.current_text = "王都衛兵「かつて大魔王軍を封じた迷宮だ。奥深くには封印の祭壇があると言われている…」".into();
+                    self.learnable_spans = spans_for(&self.current_text, &["封印の祭壇"]);
                 }
                 "封印の祭壇" => {
-                    self.current_text = "王都衛兵「祭壇の封印を解くには、古の【光のオーブ】が必要だと古文書に記されているらしい」".into();
-                    self.learnable_topic = Some("光のオーブ".into());
+                    self.current_text = "王都衛兵「祭壇の封印を解くには、古の光のオーブが必要だと古文書に記されているらしい」".into();
+                    self.learnable_spans = spans_for(&self.current_text, &["光のオーブ"]);
                 }
                 _ => {
                     self.current_text = format!("王都衛兵「『{}』だと？…すまんが俺の知るところではないな」", topic);
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
             },
             DialoguePartner::Tavern => match topic {
                 "封魔の迷宮" => {
                     self.current_text = "呑兵衛「ヒック…夜になると地下から『魔物の咆哮』が聞こえてくるんだよ…不気味だぜ」".into();
-                    self.learnable_topic = Some("魔物の咆哮".into());
+                    self.learnable_spans = spans_for(&self.current_text, &["魔物の咆哮"]);
                 }
                 "封印の祭壇" => {
-                    self.current_text = "呑兵衛「祭壇か！そういや爺さんが【光のオーブ】を古物商に売っちまったとか言ってたな…」".into();
-                    self.learnable_topic = Some("光のオーブ".into());
+                    self.current_text = "呑兵衛「祭壇か！そういや爺さんが光のオーブを古物商に売っちまったとか言ってたな…」".into();
+                    self.learnable_spans = spans_for(&self.current_text, &["光のオーブ"]);
                 }
                 "光のオーブ" => {
                     self.current_text = "呑兵衛「オーブなら、裏路地にいる怪しい男がヤバいルートを握ってるらしいぜ…」".into();
-                    self.learnable_topic = Some("裏の抜け道".into());
+                    self.learnable_spans = spans_for(&self.current_text, &["裏の抜け道"]);
                 }
                 _ => {
                     self.current_text = format!("呑兵衛「『{}』かぁ？知らねえな！酒がうめえ！」", topic);
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
             },
             DialoguePartner::Suspicious => match topic {
                 "光のオーブ" => {
-                    self.current_text = "怪しい男「ヒヒッ…オーブの話かい？地下迷宮の宝箱に隠された【銀の鍵】があれば手に入るぜ…」".into();
-                    self.learnable_topic = Some("銀の鍵".into());
+                    self.current_text = "怪しい男「ヒヒッ…オーブの話かい？地下迷宮の宝箱に隠された銀の鍵があれば手に入るぜ…」".into();
+                    self.learnable_spans = spans_for(&self.current_text, &["地下迷宮", "銀の鍵"]);
                 }
                 "銀の鍵" => {
                     self.current_text = "怪しい男「迷宮の北の宝物庫だ。鉄格子の奥の宝箱に入ってるはずだぜ…ヒヒッ」".into();
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
                 "裏の抜け道" => {
                     self.current_text = "怪しい男「裏壁の崩れかけのレンガを押せば、見張りを通らずに裏口へ行けるのさ」".into();
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
                 _ => {
                     self.current_text = format!("怪しい男「ヒヒッ…『{}』かい？あっしには関係ねえ話だな」", topic);
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
             },
             DialoguePartner::Villager => match topic {
                 "王都アルカン" => {
                     self.current_text = "街の女性「中央の噴水広場は憩いの場なんです。夜は少し冷えますから気をつけて」".into();
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
                 "封魔の迷宮" => {
                     self.current_text = "街の女性「きゃあっ！そんな恐ろしい迷宮、お願いですから近づかないでください！」".into();
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
                 _ => {
                     self.current_text = format!("街の女性「『{}』ですか？私にはよくわかりませんね…」", topic);
-                    self.learnable_topic = None;
+                    self.learnable_spans = Vec::new();
                 }
             },
             _ => {
                 self.current_text = format!("「『{}』についてですね。よく覚えておきましょう」", topic);
-                self.learnable_topic = None;
+                self.learnable_spans = Vec::new();
             }
         }
     }
@@ -291,15 +344,44 @@ mod tests {
 
         // ガードに「封魔の迷宮」を聞く
         session.ask_topic("封魔の迷宮");
-        assert_eq!(session.learnable_topic, Some("封印の祭壇".to_string()));
+        assert_eq!(learned_words(&session), vec!["封印の祭壇".to_string()]);
 
         // ガードに覚えた「封印の祭壇」を聞く
         session.ask_topic("封印の祭壇");
-        assert_eq!(session.learnable_topic, Some("光のオーブ".to_string()));
+        assert_eq!(learned_words(&session), vec!["光のオーブ".to_string()]);
 
         // 無関係な話題
         session.ask_topic("ピザのレシピ");
-        assert_eq!(session.learnable_topic, None);
+        assert!(session.learnable_spans.is_empty());
+    }
+
+    #[test]
+    fn test_dialogue_multiple_learnable_spans() {
+        let mut session = DialogueSession::start(DialoguePartner::Suspicious);
+
+        session.ask_topic("光のオーブ");
+        assert_eq!(
+            learned_words(&session),
+            vec!["地下迷宮".to_string(), "銀の鍵".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_ask_topic_cancels_pending_learn_selection() {
+        let mut session = DialogueSession::start(DialoguePartner::Suspicious);
+        session.ask_topic("光のオーブ");
+        session.learn_stage = DialogueLearnStage::ChoosingLearnTarget { cursor: 1 };
+
+        session.ask_topic("銀の鍵");
+        assert_eq!(session.learn_stage, DialogueLearnStage::Talking);
+    }
+
+    fn learned_words(session: &DialogueSession) -> Vec<String> {
+        session
+            .learnable_spans
+            .iter()
+            .map(|span| span.slice(&session.current_text))
+            .collect()
     }
 }
 

@@ -5,7 +5,7 @@ pub mod map;
 pub mod movement;
 pub mod pixel_art;
 
-pub use dialogue::{DialoguePartner, DialogueSession, SHOP_ITEMS};
+pub use dialogue::{DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, SHOP_ITEMS};
 pub use interact::{CommandKind, InteractOutcome, TargetKind};
 pub use map::AreaId;
 pub use movement::{try_move_player, MoveOutcome};
