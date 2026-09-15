@@ -276,68 +276,23 @@ impl TownMap {
         map
     }
 
-    /// 封魔の地下迷宮 B1F マップ生成
-    /// （将来的なプロシージャル生成を見据えた初期固定迷宮）
+    /// 封魔の地下迷宮 B1F マップ生成（ADR-0017: セルオートマトン法による洞窟型
+    /// プロシージャル生成）。
+    ///
+    /// 王都からの侵入口は`movement.rs`側で`Position { x: 3, y: 4 }`に固定
+    /// されているため、その座標だけは生成結果によらず必ず床になるよう
+    /// `dungeon_gen::generate`に契約座標として渡している。それ以外の内部構造
+    /// （壁の形・宝箱や魔物の位置・下り階段の位置）は訪れるたびに変化する。
     ///
     /// 高さは王都マップ（拡張後13マス）とテクスチャサイズを揃えるために合わせて
-    /// あるが、迷宮自体の内部構造（y=1..=7）は変更していない。増えた分の下端は
-    /// 既定の DungeonWall で塞がれるだけで、到達不能な余白になる。
-    pub fn create_dungeon_b1f() -> Self {
-        let width = 46;
-        let height = 13;
-        let mut map = Self::new(width, height, TileType::DungeonWall);
-
-        // 基本通路を掘る (Floor)
-        // 西のエントランスホール
-        for x in 1..=5 {
-            for y in 3..=5 {
-                map.set(x, y, TileType::DungeonFloor);
-            }
-        }
-        map.set(2, 4, TileType::StairsUp); // 地上への上り階段
-
-        // 中央大通路
-        for x in 5..=36 {
-            map.set(x, 4, TileType::DungeonFloor);
-        }
-
-        // 北側：宝物庫 (12..18, 1..3)
-        for x in 12..=18 {
-            for y in 1..=3 {
-                map.set(x, y, TileType::DungeonFloor);
-            }
-        }
-        map.set(15, 3, TileType::IronGateClosed); // 鉄格子扉
-        map.set(15, 1, TileType::ChestClosed);    // 宝箱A
-
-        // 南側：水没した礼拝堂 (18..26, 5..7)
-        for x in 18..=26 {
-            for y in 5..=7 {
-                map.set(x, y, TileType::DungeonFloor);
-            }
-        }
-        map.set(22, 4, TileType::DungeonFloor);
-        map.set(22, 6, TileType::Water);
-        map.set(23, 6, TileType::Water);
-        map.set(25, 7, TileType::ChestClosed); // 宝箱B
-
-        // 北東：牢獄区画 (28..34, 1..3)
-        for x in 28..=34 {
-            for y in 1..=3 {
-                map.set(x, y, TileType::DungeonFloor);
-            }
-        }
-        map.set(31, 3, TileType::IronGateClosed); // 牢獄の鉄格子
-
-        // 東端の大広間：魔物の巣窟 (36..44, 2..7)
-        for x in 36..=44 {
-            for y in 2..=7 {
-                map.set(x, y, TileType::DungeonFloor);
-            }
-        }
-        map.set(40, 4, TileType::MonsterSymbol); // 魔物の気配
-        map.set(43, 4, TileType::StairsDown);    // B2Fへの階段
-
-        map
+    /// あるが、この座標系自体は旧固定マップから変更していない。
+    pub fn create_dungeon_b1f<R: rand::Rng>(rng: &mut R) -> Self {
+        super::dungeon_gen::generate(
+            super::dungeon_gen::DungeonGenKind::Cave,
+            46,
+            13,
+            (3, 4),
+            rng,
+        )
     }
 }

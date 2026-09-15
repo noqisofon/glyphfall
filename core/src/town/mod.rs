@@ -1,4 +1,5 @@
 pub mod dialogue;
+pub mod dungeon_gen;
 pub mod fov;
 pub mod interact;
 pub mod map;
@@ -64,11 +65,11 @@ impl TownState {
         self.dirty = true;
     }
 
-    pub fn switch_area(&mut self, new_area: AreaId, spawn_pos: Position) {
+    pub fn switch_area<R: rand::Rng>(&mut self, new_area: AreaId, spawn_pos: Position, rng: &mut R) {
         self.current_area = new_area;
         self.map = match new_area {
             AreaId::Town => TownMap::create_arkan_capital(),
-            AreaId::DungeonB1F => TownMap::create_dungeon_b1f(),
+            AreaId::DungeonB1F => TownMap::create_dungeon_b1f(rng),
             AreaId::Village => TownMap::create_suzukake_village(),
         };
         self.player_pos = spawn_pos;
@@ -77,7 +78,7 @@ impl TownState {
         self.dirty = true;
     }
 
-    pub fn move_player(&mut self, dx: i32, dy: i32) -> MoveOutcome {
+    pub fn move_player<R: rand::Rng>(&mut self, dx: i32, dy: i32, rng: &mut R) -> MoveOutcome {
         let outcome = try_move_player(
             &mut self.map,
             self.current_area,
@@ -94,7 +95,7 @@ impl TownState {
             ref message,
         } = outcome
         {
-            self.switch_area(new_area, spawn_pos);
+            self.switch_area(new_area, spawn_pos, rng);
             return MoveOutcome::ChangeArea {
                 new_area,
                 spawn_pos,

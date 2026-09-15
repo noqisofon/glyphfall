@@ -23,6 +23,7 @@
 | [ADR-0014](0014-input-decomposition-and-reactive-ui.md) | 入力処理のモード別分割とチェンジディテクションによるUI更新アーキテクチャ | Accepted | 2026-09-15 |
 | [ADR-0015](0015-turn-based-battle-and-module-decomposition.md) | 仲間指示型ターン制戦闘ループと「あなた」実体化・ファイル責務再編 | Accepted | 2026-09-16 |
 | [ADR-0016](0016-cargo-workspace-core-app-split.md) | Cargoワークスペース化によるロジックコア（`glyphfall-core`）とBevy皮（`glyphfall`/`app`）の分離 | Accepted | 2026-09-15 |
+| [ADR-0017](0017-cave-procedural-dungeon-generation.md) | セルオートマトン法による洞窟型ダンジョンのプロシージャル生成 | Accepted | 2026-09-15 |
 
  
 ## フォーマットについて
