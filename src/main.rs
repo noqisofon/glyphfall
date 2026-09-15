@@ -1578,7 +1578,7 @@ fn handle_travel_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
     mut town: ResMut<TownState>,
-    mut travel_state: ResMut<TravelState>,
+    travel_state: Res<TravelState>,
     event_registry: Res<SuddenEventRegistry>,
     mut event_history: ResMut<SuddenEventHistory>,
     mut dialogue_res: ResMut<ActiveDialogue>,
