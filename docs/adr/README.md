@@ -17,6 +17,8 @@
 | [ADR-0008](0008-hybrid-exploration-perspective.md) | ハイブリッド移動視点システム（視界制限付き見下ろし × 一人称疑似3D）の採用 | Superseded | 2026-09-13 |
 | [ADR-0009](0009-retro-2d-sprite-graphics.md) | レトロ2Dドット絵／スプライト・ハイブリッドの採用 | Accepted | 2026-09-14 |
 | [ADR-0010](0010-unified-top-down-exploration.md) | 統一見下ろし視点探索システムとダンジョン2Dドット絵化の採用 | Accepted | 2026-09-14 |
+| [ADR-0011](0011-command-driven-interaction.md) | コマンド駆動インタラクト（Zキー→コマンド選択→方向選択）の採用 | Accepted | 2026-09-15 |
+| [ADR-0012](0012-oboeru-underline-phrase-selection.md) | メッセージ内下線語句選択方式による「おぼえる」UXの刷新 | Accepted | 2026-09-15 |
 
  
 ## フォーマットについて
