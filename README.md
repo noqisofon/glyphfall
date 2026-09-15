@@ -81,6 +81,9 @@ cargo run
 - [ADR-0009: レトロ2Dドット絵／スプライト・ハイブリッドの採用](docs/adr/0009-retro-2d-sprite-graphics.md)
 - [ADR-0010: 統一見下ろし視点探索システムとダンジョン2Dドット絵化の採用](docs/adr/0010-unified-top-down-exploration.md)
 - [ADR-0011: コマンド駆動インタラクト（Zキー→コマンド選択→方向選択）の採用](docs/adr/0011-command-driven-interaction.md)
+- [ADR-0012: メッセージ内下線語句選択方式による「おぼえる」UXの刷新](docs/adr/0012-oboeru-underline-phrase-selection.md)
+- [ADR-0013: 突発イベント発生システム（トリガー／抽選エンジン）の設計](docs/adr/0013-sudden-event-trigger-system.md)
+- [ADR-0014: 入力処理のモード別分割とチェンジディテクションによるUI更新アーキテクチャ](docs/adr/0014-input-decomposition-and-reactive-ui.md)
 
 
 

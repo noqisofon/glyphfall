@@ -64,10 +64,10 @@ impl FovMap {
                 let dx = tx - player_x;
                 let dy = ty - player_y;
                 // 横縦のアスペクト比を補正（等幅文字は縦長なので縦の重みをやや大きめに）
-                if dx * dx + (dy * 2) * (dy * 2) <= r_squared * 2 {
-                    if has_line_of_sight(map, player_x, player_y, tx, ty) {
-                        self.set_visible(tx, ty);
-                    }
+                if dx * dx + (dy * 2) * (dy * 2) <= r_squared * 2
+                    && has_line_of_sight(map, player_x, player_y, tx, ty)
+                {
+                    self.set_visible(tx, ty);
                 }
             }
         }

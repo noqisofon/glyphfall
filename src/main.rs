@@ -52,6 +52,13 @@ pub enum AppMode {
     Battle,
 }
 
+fn in_mode(target: AppMode) -> impl Fn(Res<AppMode>) -> bool {
+    move |mode: Res<AppMode>| *mode == target
+}
+
+#[derive(Event, Debug, Clone)]
+pub struct ShowMessage(pub String);
+
 /// ADR-0011: コマンド駆動インタラクトの進行段階。
 /// 「どうぐ」以外はコマンド決定後に方向選択へ遷移する。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -178,15 +185,33 @@ fn main() {
                 ),
             ],
         })
+        .add_event::<ShowMessage>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
-                typewriter_tick,
-                handle_input,
-                monster_flash_tick,
-                dialogue_underline_tick,
-            ),
+                (typewriter_tick, dialogue_underline_tick, monster_flash_tick),
+                (
+                    handle_common_input,
+                    handle_town_input.run_if(in_mode(AppMode::Town)),
+                    handle_interact_input.run_if(in_mode(AppMode::Interact)),
+                    handle_dialogue_input.run_if(in_mode(AppMode::Dialogue)),
+                    handle_shop_input.run_if(in_mode(AppMode::Shop)),
+                    handle_inn_input.run_if(in_mode(AppMode::Inn)),
+                    handle_battle_input.run_if(in_mode(AppMode::Battle)),
+                ),
+                (
+                    update_message_window,
+                    update_town_texture_system,
+                ),
+                (
+                    update_status_header_system,
+                    update_tri_split_windows_system,
+                    update_battle_monster_display_system,
+                    update_center_window_visibility_system,
+                ),
+            )
+                .chain(),
         )
         .run();
 }
@@ -927,31 +952,15 @@ fn monster_flash_tick(
     }
 }
 
-fn handle_input(
+fn handle_common_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut town: ResMut<TownState>,
-    mut images: ResMut<Assets<Image>>,
     mut party: ResMut<PartyState>,
-    mut inv: ResMut<PlayerInventory>,
+    mut town: ResMut<TownState>,
     mut dialogue_res: ResMut<ActiveDialogue>,
-    mut battle: ResMut<BattleState>,
-    mut command_menu: ResMut<CommandMenuState>,
-    player: Res<PlayerResource>,
-    mut header_query: Query<&mut Text, (With<StatusHeaderNode>, Without<MessageTextNode>, Without<BattleMonsterTextNode>, Without<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
-    mut left_window_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<BattleMonsterTextNode>, Without<RightWindowTextNode>)>,
-    mut right_window_query: Query<&mut Text, (With<RightWindowTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<BattleMonsterTextNode>, Without<LeftWindowTextNode>)>,
-    mut battle_monster_query: Query<(&mut Text, &mut Node), (With<BattleMonsterTextNode>, Without<MessageTextNode>, Without<StatusHeaderNode>, Without<TownMapImageNode>, Without<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
-    mut town_image_query: Query<&mut Node, (With<TownMapImageNode>, Without<BattleMonsterTextNode>)>,
+    mut msg_events: EventWriter<ShowMessage>,
     mut message_query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
 ) {
-    let mut rng = thread_rng();
-    let mut new_message = None;
-    let mut update_header = false;
-    let mut mode_changed = false;
-    let mut update_monster_display = false;
-    let mut update_tri_windows = false;
-
     // [Space]: タイプライターの文字送りをスキップ
     if keyboard.just_pressed(KeyCode::Space) {
         if let Ok((mut type_msg, mut text)) = message_query.get_single_mut() {
@@ -965,52 +974,149 @@ fn handle_input(
         party.debug_mode = !party.debug_mode;
         town.debug_see_all = party.debug_mode;
         town.recompute_fov();
-        update_header = true;
     }
 
     // [Tab]: 注目する仲間切り替え
     if keyboard.just_pressed(KeyCode::Tab) {
         party.selected_index = (party.selected_index + 1) % party.members.len();
         let member = &party.members[party.selected_index];
-        new_message = Some(format!("{}に　ちゅうもくした。", member.name));
-        update_header = true;
+        msg_events.send(ShowMessage(format!("{}に　ちゅうもくした。", member.name)));
     }
 
     // [B]: モード切替（街探索 ↔ 戦闘テスト）
     if keyboard.just_pressed(KeyCode::KeyB) {
         *mode = match *mode {
             AppMode::Battle => {
-                new_message = Some("王都アルカンの街並みへ生還した。\n[WASD]で街を歩き回れる。".into());
+                msg_events.send(ShowMessage(
+                    "王都アルカンの街並みへ生還した。\n[WASD]で街を歩き回れる。".into(),
+                ));
                 AppMode::Town
             }
             _ => {
-                new_message = Some("地下迷宮の魔物とエンカウントした！\n[1]たたかう や [2]みをまもる で指示を出そう。[B]で街へ戻る。".into());
+                msg_events.send(ShowMessage(
+                    "地下迷宮の魔物とエンカウントした！\n[1]たたかう や [2]みをまもる で指示を出そう。[B]で街へ戻る。".into(),
+                ));
                 AppMode::Battle
             }
         };
         dialogue_res.0 = None;
-        update_header = true;
-        mode_changed = true;
-        update_monster_display = true;
-        update_tri_windows = true;
+    }
+}
+
+fn handle_town_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut town: ResMut<TownState>,
+    mut command_menu: ResMut<CommandMenuState>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    // [L]: 松明のON/OFF切り替え
+    if keyboard.just_pressed(KeyCode::KeyL) {
+        town.torch_active = !town.torch_active;
+        town.recompute_fov();
+        let status = if town.torch_active {
+            "松明に火を灯した。周囲が明るくなった！（視界半径6マス）"
+        } else {
+            "松明の火を消した。月明かりだけが頼りだ……（視界半径2マス）"
+        };
+        msg_events.send(ShowMessage(status.into()));
     }
 
-    match *mode {
-        AppMode::Town => {
-            // [L]: 松明のON/OFF切り替え
-            if keyboard.just_pressed(KeyCode::KeyL) {
-                town.torch_active = !town.torch_active;
-                town.recompute_fov();
-                update_header = true;
-                let status = if town.torch_active {
-                    "松明に火を灯した。周囲が明るくなった！（視界半径6マス）"
-                } else {
-                    "松明の火を消した。月明かりだけが頼りだ……（視界半径2マス）"
-                };
-                new_message = Some(status.into());
+    // 移動入力（WASD / 矢印キー）
+    let mut dx = 0;
+    let mut dy = 0;
+
+    if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+        dy -= 1;
+    } else if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+        dy += 1;
+    } else if keyboard.just_pressed(KeyCode::KeyA) || keyboard.just_pressed(KeyCode::ArrowLeft) {
+        dx -= 1;
+    } else if keyboard.just_pressed(KeyCode::KeyD) || keyboard.just_pressed(KeyCode::ArrowRight) {
+        dx += 1;
+    }
+
+    if dx != 0 || dy != 0 {
+        let outcome = town.move_player(dx, dy);
+
+        match outcome {
+            MoveOutcome::Moved { message } => {
+                if let Some(msg) = message {
+                    msg_events.send(ShowMessage(msg));
+                }
+            }
+            MoveOutcome::Blocked { message } => {
+                if let Some(msg) = message {
+                    msg_events.send(ShowMessage(msg));
+                }
+            }
+            MoveOutcome::TriggerBattle { message } => {
+                msg_events.send(ShowMessage(message));
+                *mode = AppMode::Battle;
+                dialogue_res.0 = None;
+            }
+            MoveOutcome::ChangeArea { message, .. } => {
+                msg_events.send(ShowMessage(message));
+            }
+        }
+    }
+
+    // [Z]: コマンドウィンドウを開く（ADR-0011: コマンド駆動インタラクト）
+    if keyboard.just_pressed(KeyCode::KeyZ) {
+        command_menu.stage = CommandMenuStage::ChoosingCommand;
+        command_menu.selected_index = 0;
+        *mode = AppMode::Interact;
+        msg_events.send(ShowMessage("コマンドを選んでください。".into()));
+    }
+}
+
+fn handle_interact_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut town: ResMut<TownState>,
+    mut inv: ResMut<PlayerInventory>,
+    mut command_menu: ResMut<CommandMenuState>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    match command_menu.stage {
+        CommandMenuStage::ChoosingCommand => {
+            let len = CommandKind::ALL.len();
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                command_menu.selected_index = (command_menu.selected_index + len - 1) % len;
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                command_menu.selected_index = (command_menu.selected_index + 1) % len;
             }
 
-            // 移動入力（WASD / 矢印キー）
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                let command = CommandKind::ALL[command_menu.selected_index];
+                if command.needs_direction() {
+                    let label = command.dynamic_label(town.facing_target_kind());
+                    command_menu.stage = CommandMenuStage::ChoosingDirection(command);
+                    msg_events.send(ShowMessage(format!("『{}』する方向を選んでください。", label)));
+                } else {
+                    // 「どうぐ」は方向を選ばず、その場で所持品を確認する
+                    let mut msg = format!("【どうぐ】所持金: {}G\n", inv.gold);
+                    if inv.items.is_empty() {
+                        msg.push_str("何も持っていない。");
+                    } else {
+                        for item in &inv.items {
+                            msg.push_str(&format!("・{}\n", item));
+                        }
+                    }
+                    msg_events.send(ShowMessage(msg));
+                    *mode = AppMode::Town;
+                }
+            }
+
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                *mode = AppMode::Town;
+                msg_events.send(ShowMessage("コマンドをやめた。".into()));
+            }
+        }
+        CommandMenuStage::ChoosingDirection(command) => {
             let mut dx = 0;
             let mut dy = 0;
 
@@ -1025,525 +1131,475 @@ fn handle_input(
             }
 
             if dx != 0 || dy != 0 {
-                let outcome = town.move_player(dx, dy);
-
+                town.face(dx, dy);
+                let outcome = town.resolve_interact(command);
                 match outcome {
-                    MoveOutcome::Moved { message } => {
-                        if let Some(msg) = message {
-                            new_message = Some(msg);
-                        }
+                    InteractOutcome::Message(msg) => {
+                        msg_events.send(ShowMessage(msg));
                     }
-                    MoveOutcome::Blocked { message } => {
-                        if let Some(msg) = message {
-                            new_message = Some(msg);
-                        }
+                    InteractOutcome::ChestOpened { gold, item, message } => {
+                        inv.add_gold(gold);
+                        inv.add_item(&item);
+                        msg_events.send(ShowMessage(message));
                     }
-                    MoveOutcome::TriggerBattle { message } => {
-                        new_message = Some(message);
-                        *mode = AppMode::Battle;
-                        dialogue_res.0 = None;
-                        mode_changed = true;
-                        update_header = true;
-                        update_monster_display = true;
-                        update_tri_windows = true;
-                    }
-                    MoveOutcome::ChangeArea { message, .. } => {
-                        new_message = Some(message);
-                        update_header = true;
+                    InteractOutcome::StartDialogue(partner) => {
+                        let session = DialogueSession::start(partner);
+                        msg_events.send(ShowMessage(session.current_text.clone()));
+                        *mode = match partner {
+                            DialoguePartner::Shop => AppMode::Shop,
+                            DialoguePartner::Inn => AppMode::Inn,
+                            _ => AppMode::Dialogue,
+                        };
+                        dialogue_res.0 = Some(session);
                     }
                 }
-            }
 
-            // [Z]: コマンドウィンドウを開く（ADR-0011: コマンド駆動インタラクト）
-            if keyboard.just_pressed(KeyCode::KeyZ) {
+                if *mode == AppMode::Interact {
+                    *mode = AppMode::Town;
+                }
                 command_menu.stage = CommandMenuStage::ChoosingCommand;
-                command_menu.selected_index = 0;
-                *mode = AppMode::Interact;
-                new_message = Some("コマンドを選んでください。".into());
-                mode_changed = true;
-                update_header = true;
-                update_tri_windows = true;
+            }
+
+            if keyboard.just_pressed(KeyCode::Escape) {
+                *mode = AppMode::Town;
+                command_menu.stage = CommandMenuStage::ChoosingCommand;
+                msg_events.send(ShowMessage("コマンドをやめた。".into()));
             }
         }
-        AppMode::Interact => match command_menu.stage {
-            CommandMenuStage::ChoosingCommand => {
-                let len = CommandKind::ALL.len();
-                if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-                    command_menu.selected_index = (command_menu.selected_index + len - 1) % len;
-                    update_tri_windows = true;
-                }
-                if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
-                    command_menu.selected_index = (command_menu.selected_index + 1) % len;
-                    update_tri_windows = true;
-                }
+    }
+}
 
-                if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
-                    let command = CommandKind::ALL[command_menu.selected_index];
-                    if command.needs_direction() {
-                        command_menu.stage = CommandMenuStage::ChoosingDirection(command);
-                        new_message = Some(format!(
-                            "『{}』する方向を選んでください。",
-                            command.dynamic_label(town.facing_target_kind())
-                        ));
-                        update_tri_windows = true;
-                    } else {
-                        // 「どうぐ」は方向を選ばず、その場で所持品を確認する
-                        let mut msg = format!("【どうぐ】所持金: {}G\n", inv.gold);
-                        if inv.items.is_empty() {
-                            msg.push_str("何も持っていない。");
-                        } else {
-                            for item in &inv.items {
-                                msg.push_str(&format!("・{}\n", item));
-                            }
-                        }
-                        new_message = Some(msg);
-                        *mode = AppMode::Town;
-                        mode_changed = true;
-                        update_header = true;
-                        update_tri_windows = true;
-                    }
-                }
+fn handle_dialogue_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut inv: ResMut<PlayerInventory>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    let learn_stage = dialogue_res
+        .0
+        .as_ref()
+        .map(|s| s.learn_stage)
+        .unwrap_or_default();
 
-                if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
-                    *mode = AppMode::Town;
-                    new_message = Some("コマンドをやめた。".into());
-                    mode_changed = true;
-                    update_header = true;
-                    update_tri_windows = true;
-                }
-            }
-            CommandMenuStage::ChoosingDirection(command) => {
-                let mut dx = 0;
-                let mut dy = 0;
-
-                if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-                    dy -= 1;
-                } else if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
-                    dy += 1;
-                } else if keyboard.just_pressed(KeyCode::KeyA) || keyboard.just_pressed(KeyCode::ArrowLeft) {
-                    dx -= 1;
-                } else if keyboard.just_pressed(KeyCode::KeyD) || keyboard.just_pressed(KeyCode::ArrowRight) {
-                    dx += 1;
-                }
-
-                if dx != 0 || dy != 0 {
-                    town.face(dx, dy);
-                    let outcome = town.resolve_interact(command);
-                    match outcome {
-                        InteractOutcome::Message(msg) => {
-                            new_message = Some(msg);
-                        }
-                        InteractOutcome::ChestOpened { gold, item, message } => {
-                            inv.add_gold(gold);
-                            inv.add_item(&item);
-                            new_message = Some(message);
-                        }
-                        InteractOutcome::StartDialogue(partner) => {
-                            let session = DialogueSession::start(partner);
-                            new_message = Some(session.current_text.clone());
-                            *mode = match partner {
-                                DialoguePartner::Shop => AppMode::Shop,
-                                DialoguePartner::Inn => AppMode::Inn,
-                                _ => AppMode::Dialogue,
-                            };
-                            dialogue_res.0 = Some(session);
-                        }
-                    }
-
-                    if *mode == AppMode::Interact {
-                        *mode = AppMode::Town;
-                    }
-                    mode_changed = true;
-                    command_menu.stage = CommandMenuStage::ChoosingCommand;
-                    update_header = true;
-                    update_tri_windows = true;
-                }
-
-                if keyboard.just_pressed(KeyCode::Escape) {
-                    *mode = AppMode::Town;
-                    command_menu.stage = CommandMenuStage::ChoosingCommand;
-                    new_message = Some("コマンドをやめた。".into());
-                    mode_changed = true;
-                    update_header = true;
-                    update_tri_windows = true;
-                }
-            }
-        },
-        AppMode::Dialogue => {
-            let learn_stage = dialogue_res
-                .0
-                .as_ref()
-                .map(|s| s.learn_stage)
-                .unwrap_or_default();
-
-            match learn_stage {
-                DialogueLearnStage::Talking => {
-                    // [W/S]: 話題選択
-                    if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            session.selected_topic_index = session.selected_topic_index.saturating_sub(1);
-                            update_tri_windows = true;
-                        }
-                    }
-                    if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            let max_idx = inv.topics.len().saturating_sub(1);
-                            if session.selected_topic_index < max_idx {
-                                session.selected_topic_index += 1;
-                                update_tri_windows = true;
-                            }
-                        }
-                    }
-
-                    // [1] / [Enter]: 話題を振る
-                    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            if let Some(topic) = inv.topics.get(session.selected_topic_index).cloned() {
-                                session.ask_topic(&topic);
-                                new_message = Some(session.current_text.clone());
-                                update_tri_windows = true;
-                            }
-                        }
-                    }
-
-                    // [2]: 「おぼえる」。下線候補の数に応じて挙動が変わる（ADR-0012）。
-                    // 0件は従来どおり、1件は即座に覚える、2件以上は本文中の下線候補選択モードへ。
-                    if keyboard.just_pressed(KeyCode::Digit2) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            match session.learnable_spans.len() {
-                                0 => {
-                                    new_message =
-                                        Some("新しく覚えられるキーワードは見当たらない。".into());
-                                }
-                                1 => {
-                                    let word = session.learnable_spans[0].slice(&session.current_text);
-                                    let learned = inv.learn_topic(&word);
-                                    new_message = Some(if learned {
-                                        format!(
-                                            "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
-                                            word
-                                        )
-                                    } else {
-                                        format!("【{}】は既に覚えている。", word)
-                                    });
-                                }
-                                _ => {
-                                    session.learn_stage =
-                                        DialogueLearnStage::ChoosingLearnTarget { cursor: 0 };
-                                    update_header = true;
-                                }
-                            }
-                            update_tri_windows = true;
-                        }
-                    }
-
-                    // [3] / [Esc]: 会話を終える
-                    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape)
-                    {
-                        dialogue_res.0 = None;
-                        *mode = AppMode::Town;
-                        new_message = Some("会話を終えて、再び歩き出した。".into());
-                        mode_changed = true;
-                        update_header = true;
-                        update_tri_windows = true;
-                    }
-                }
-                DialogueLearnStage::ChoosingLearnTarget { cursor } => {
-                    // [W/S]: 下線候補のカーソル移動（本文中の出現順を循環）
-                    if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            let len = session.learnable_spans.len().max(1);
-                            session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
-                                cursor: (cursor + len - 1) % len,
-                            };
-                        }
-                    }
-                    if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            let len = session.learnable_spans.len().max(1);
-                            session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
-                                cursor: (cursor + 1) % len,
-                            };
-                        }
-                    }
-
-                    // [1] / [Enter]: カーソル位置の候補を確定して覚える
-                    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            if let Some(span) = session.learnable_spans.get(cursor).copied() {
-                                let word = span.slice(&session.current_text);
-                                let learned = inv.learn_topic(&word);
-                                new_message = Some(if learned {
-                                    format!(
-                                        "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
-                                        word
-                                    )
-                                } else {
-                                    format!("【{}】は既に覚えている。", word)
-                                });
-                            }
-                            session.learn_stage = DialogueLearnStage::Talking;
-                            update_header = true;
-                            update_tri_windows = true;
-                        }
-                    }
-
-                    // [3] / [Esc]: 何も覚えずに選択をやめる（会話自体は終えない）
-                    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape)
-                    {
-                        if let Some(session) = dialogue_res.0.as_mut() {
-                            session.learn_stage = DialogueLearnStage::Talking;
-                        }
-                        update_header = true;
-                        update_tri_windows = true;
-                    }
-                }
-            }
-        }
-        AppMode::Shop => {
-            // [W/S]: 商品選択
+    match learn_stage {
+        DialogueLearnStage::Talking => {
+            // [W/S]: 話題選択
             if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
                 if let Some(session) = dialogue_res.0.as_mut() {
-                    session.selected_shop_index = session.selected_shop_index.saturating_sub(1);
-                    let item = &SHOP_ITEMS[session.selected_shop_index];
-                    new_message = Some(format!("【{}】({}G)\n{}", item.name, item.price, item.description));
-                    update_tri_windows = true;
+                    session.selected_topic_index = session.selected_topic_index.saturating_sub(1);
                 }
             }
             if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
                 if let Some(session) = dialogue_res.0.as_mut() {
-                    if session.selected_shop_index + 1 < SHOP_ITEMS.len() {
-                        session.selected_shop_index += 1;
-                        let item = &SHOP_ITEMS[session.selected_shop_index];
-                        new_message = Some(format!("【{}】({}G)\n{}", item.name, item.price, item.description));
-                        update_tri_windows = true;
+                    let max_idx = inv.topics.len().saturating_sub(1);
+                    if session.selected_topic_index < max_idx {
+                        session.selected_topic_index += 1;
                     }
                 }
             }
 
-            // [1] / [Enter]: 商品購入
+            // [1] / [Enter]: 話題を振る
             if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
                 if let Some(session) = dialogue_res.0.as_mut() {
-                    session.buy_item(&mut inv);
-                    new_message = Some(session.current_text.clone());
-                    update_header = true;
-                    update_tri_windows = true;
+                    if let Some(topic) = inv.topics.get(session.selected_topic_index).cloned() {
+                        session.ask_topic(&topic);
+                        msg_events.send(ShowMessage(session.current_text.clone()));
+                    }
                 }
             }
 
-            // [3] / [Esc]: 店を出る
-            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
-                dialogue_res.0 = None;
-                *mode = AppMode::Town;
-                new_message = Some("道具屋を出た。".into());
-                mode_changed = true;
-                update_header = true;
-                update_tri_windows = true;
-            }
-        }
-        AppMode::Inn => {
-            // [1] / [Enter]: 宿泊
-            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    session.rest_at_inn(&mut inv, &mut party.members);
-                    new_message = Some(session.current_text.clone());
-                    update_header = true;
-                    update_tri_windows = true;
-                }
-            }
-
-            // [3] / [Esc]: 宿を出る
-            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
-                dialogue_res.0 = None;
-                *mode = AppMode::Town;
-                new_message = Some("宿屋を出た。".into());
-                mode_changed = true;
-                update_header = true;
-                update_tri_windows = true;
-            }
-        }
-        AppMode::Battle => {
-            // [N]: モンスター切り替え（テスト用）
-            if keyboard.just_pressed(KeyCode::KeyN) {
-                battle.next_monster();
-                let mon = battle.current_monster();
-                new_message = Some(format!("あらたな　魔物【{}】が　あらわれた！", mon.name));
-                update_monster_display = true;
-            }
-
-            // [1]: 「たたかう」
-            if keyboard.just_pressed(KeyCode::Digit1) {
-                let member = &party.members[party.selected_index];
-                let outcome = evaluate_command(member, PartyCommand::Attack, &mut rng);
-                match outcome {
-                    ActionOutcome::Obeyed { action_msg } => {
-                        let damage: i32 = rng.gen_range(8..=14);
-                        let (mon_name, is_dead) = battle.apply_damage(damage);
-                        update_monster_display = true;
-
-                        let mut msg = format!(
-                            "{}に「たたかう」よう　指示した！\n{}\n{}に {}の ダメージを与えた！",
-                            member.name, action_msg, mon_name, damage
-                        );
-
-                        if is_dead {
-                            msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                            battle.next_monster();
-                            let next_mon = battle.current_monster();
-                            msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                        }
-                        new_message = Some(msg);
-                    }
-                    ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                        if member.personality == Personality::Yandere {
-                            let damage: i32 = rng.gen_range(16..=22);
-                            let (mon_name, is_dead) = battle.apply_damage(damage);
-                            update_monster_display = true;
-
-                            let mut msg = format!(
-                                "{}に「たたかう」よう　指示した！\n{}\n{}\nなんと　{}に {}の 大ダメージ！",
-                                member.name, reason_msg, action_msg, mon_name, damage
-                            );
-                            if is_dead {
-                                msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                                battle.next_monster();
-                                let next_mon = battle.current_monster();
-                                msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
-                            }
-                            new_message = Some(msg);
-                        } else {
-                            new_message = Some(format!(
-                                "{}に「たたかう」よう　指示した！\n{}\n{}",
-                                member.name, reason_msg, action_msg
-                            ));
-                        }
-                    }
-                };
-            }
-
-            // [2]: 「みをまもる」
+            // [2]: 「おぼえる」。下線候補の数に応じて挙動が変わる（ADR-0012）。
             if keyboard.just_pressed(KeyCode::Digit2) {
-                let member = &party.members[party.selected_index];
-                let outcome = evaluate_command(member, PartyCommand::Defend, &mut rng);
-                let msg = match outcome {
-                    ActionOutcome::Obeyed { action_msg } => {
-                        format!("{}に「みをまもる」よう　指示した。\n{}", member.name, action_msg)
-                    }
-                    ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                        format!(
-                            "{}に「みをまもる」よう　指示した！\n{}\n{}",
-                            member.name, reason_msg, action_msg
-                        )
-                    }
-                };
-                new_message = Some(msg);
-            }
-
-            // [3]: 「すてみ」
-            if keyboard.just_pressed(KeyCode::Digit3) {
-                let member = &party.members[party.selected_index];
-                let outcome = evaluate_command(member, PartyCommand::DesperateAttack, &mut rng);
-                match outcome {
-                    ActionOutcome::Obeyed { action_msg } => {
-                        let damage: i32 = rng.gen_range(25..=35);
-                        let (mon_name, is_dead) = battle.apply_damage(damage);
-                        update_monster_display = true;
-
-                        let mut msg = format!(
-                            "{}に「すてみ」を　命じた！\n{}\n会心の一撃！　{}に {}の 痛恨のダメージ！",
-                            member.name, action_msg, mon_name, damage
-                        );
-
-                        if is_dead {
-                            msg.push_str(&format!("\n{}を　たおした！", mon_name));
-                            battle.next_monster();
-                            let next_mon = battle.current_monster();
-                            msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    match session.learnable_spans.len() {
+                        0 => {
+                            msg_events.send(ShowMessage("新しく覚えられるキーワードは見当たらない。".into()));
                         }
-                        new_message = Some(msg);
+                        1 => {
+                            let word = session.learnable_spans[0].slice(&session.current_text);
+                            let learned = inv.learn_topic(&word);
+                            let msg = if learned {
+                                format!(
+                                    "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                    word
+                                )
+                            } else {
+                                format!("【{}】は既に覚えている。", word)
+                            };
+                            msg_events.send(ShowMessage(msg));
+                        }
+                        _ => {
+                            session.learn_stage =
+                                DialogueLearnStage::ChoosingLearnTarget { cursor: 0 };
+                        }
                     }
-                    ActionOutcome::Disobeyed { reason_msg, action_msg } => {
-                        new_message = Some(format!(
-                            "{}に「すてみ」を　命じた！\n{}\n{}",
-                            member.name, reason_msg, action_msg
-                        ));
-                    }
-                };
+                }
             }
 
-            // [4]: 「観察する」
-            if keyboard.just_pressed(KeyCode::Digit4) {
-                let member = &party.members[party.selected_index];
-                let report = diagnose_member(&player.skills, member, &mut rng);
-                let msg = format!("{}\n{}", report.observation_msg, report.conclusion_msg);
-                new_message = Some(msg);
+            // [3] / [Esc]: 会話を終える
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                dialogue_res.0 = None;
+                *mode = AppMode::Town;
+                msg_events.send(ShowMessage("会話を終えて、再び歩き出した。".into()));
+            }
+        }
+        DialogueLearnStage::ChoosingLearnTarget { cursor } => {
+            // [W/S]: 下線候補のカーソル移動（本文中の出現順を循環）
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let len = session.learnable_spans.len().max(1);
+                    session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
+                        cursor: (cursor + len - 1) % len,
+                    };
+                }
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let len = session.learnable_spans.len().max(1);
+                    session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
+                        cursor: (cursor + 1) % len,
+                    };
+                }
+            }
+
+            // [1] / [Enter]: カーソル位置の候補を確定して覚える
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if let Some(span) = session.learnable_spans.get(cursor).copied() {
+                        let word = span.slice(&session.current_text);
+                        let learned = inv.learn_topic(&word);
+                        let msg = if learned {
+                            format!(
+                                "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                word
+                            )
+                        } else {
+                            format!("【{}】は既に覚えている。", word)
+                        };
+                        msg_events.send(ShowMessage(msg));
+                    }
+                    session.learn_stage = DialogueLearnStage::Talking;
+                }
+            }
+
+            // [3] / [Esc]: 何も覚えずに選択をやめる（会話自体は終えない）
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.learn_stage = DialogueLearnStage::Talking;
+                }
+            }
+        }
+    }
+}
+
+fn handle_shop_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut inv: ResMut<PlayerInventory>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    // [W/S]: 商品選択
+    if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+        if let Some(session) = dialogue_res.0.as_mut() {
+            session.selected_shop_index = session.selected_shop_index.saturating_sub(1);
+            let item = &SHOP_ITEMS[session.selected_shop_index];
+            msg_events.send(ShowMessage(format!(
+                "【{}】({}G)\n{}",
+                item.name, item.price, item.description
+            )));
+        }
+    }
+    if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+        if let Some(session) = dialogue_res.0.as_mut() {
+            if session.selected_shop_index + 1 < SHOP_ITEMS.len() {
+                session.selected_shop_index += 1;
+                let item = &SHOP_ITEMS[session.selected_shop_index];
+                msg_events.send(ShowMessage(format!(
+                    "【{}】({}G)\n{}",
+                    item.name, item.price, item.description
+                )));
             }
         }
     }
 
-    // テクスチャの更新（移動やFOV変化があった場合）
+    // [1] / [Enter]: 商品購入
+    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+        if let Some(session) = dialogue_res.0.as_mut() {
+            session.buy_item(&mut inv);
+            msg_events.send(ShowMessage(session.current_text.clone()));
+        }
+    }
+
+    // [3] / [Esc]: 店を出る
+    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+        dialogue_res.0 = None;
+        *mode = AppMode::Town;
+        msg_events.send(ShowMessage("道具屋を出た。".into()));
+    }
+}
+
+fn handle_inn_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut party: ResMut<PartyState>,
+    mut inv: ResMut<PlayerInventory>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    // [1] / [Enter]: 宿泊
+    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+        if let Some(session) = dialogue_res.0.as_mut() {
+            session.rest_at_inn(&mut inv, &mut party.members);
+            msg_events.send(ShowMessage(session.current_text.clone()));
+        }
+    }
+
+    // [3] / [Esc]: 宿を出る
+    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+        dialogue_res.0 = None;
+        *mode = AppMode::Town;
+        msg_events.send(ShowMessage("宿屋を出た。".into()));
+    }
+}
+
+fn handle_battle_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    party: Res<PartyState>,
+    player: Res<PlayerResource>,
+    mut battle: ResMut<BattleState>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    let mut rng = thread_rng();
+
+    // [N]: モンスター切り替え（テスト用）
+    if keyboard.just_pressed(KeyCode::KeyN) {
+        battle.next_monster();
+        let mon = battle.current_monster();
+        msg_events.send(ShowMessage(format!("あらたな　魔物【{}】が　あらわれた！", mon.name)));
+    }
+
+    // [1]: 「たたかう」
+    if keyboard.just_pressed(KeyCode::Digit1) {
+        let member = &party.members[party.selected_index];
+        let outcome = evaluate_command(member, PartyCommand::Attack, &mut rng);
+        match outcome {
+            ActionOutcome::Obeyed { action_msg } => {
+                let damage: i32 = rng.gen_range(8..=14);
+                let (mon_name, is_dead) = battle.apply_damage(damage);
+
+                let mut msg = format!(
+                    "{}に「たたかう」よう　指示した！\n{}\n{}に {}の ダメージを与えた！",
+                    member.name, action_msg, mon_name, damage
+                );
+
+                if is_dead {
+                    msg.push_str(&format!("\n{}を　たおした！", mon_name));
+                    battle.next_monster();
+                    let next_mon = battle.current_monster();
+                    msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                }
+                msg_events.send(ShowMessage(msg));
+            }
+            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                if member.personality == Personality::Yandere {
+                    let damage: i32 = rng.gen_range(16..=22);
+                    let (mon_name, is_dead) = battle.apply_damage(damage);
+
+                    let mut msg = format!(
+                        "{}に「たたかう」よう　指示した！\n{}\n{}\nなんと　{}に {}の 大ダメージ！",
+                        member.name, reason_msg, action_msg, mon_name, damage
+                    );
+                    if is_dead {
+                        msg.push_str(&format!("\n{}を　たおした！", mon_name));
+                        battle.next_monster();
+                        let next_mon = battle.current_monster();
+                        msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                    }
+                    msg_events.send(ShowMessage(msg));
+                } else {
+                    msg_events.send(ShowMessage(format!(
+                        "{}に「たたかう」よう　指示した！\n{}\n{}",
+                        member.name, reason_msg, action_msg
+                    )));
+                }
+            }
+        };
+    }
+
+    // [2]: 「みをまもる」
+    if keyboard.just_pressed(KeyCode::Digit2) {
+        let member = &party.members[party.selected_index];
+        let outcome = evaluate_command(member, PartyCommand::Defend, &mut rng);
+        let msg = match outcome {
+            ActionOutcome::Obeyed { action_msg } => {
+                format!("{}に「みをまもる」よう　指示した。\n{}", member.name, action_msg)
+            }
+            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                format!(
+                    "{}に「みをまもる」よう　指示した！\n{}\n{}",
+                    member.name, reason_msg, action_msg
+                )
+            }
+        };
+        msg_events.send(ShowMessage(msg));
+    }
+
+    // [3]: 「すてみ」
+    if keyboard.just_pressed(KeyCode::Digit3) {
+        let member = &party.members[party.selected_index];
+        let outcome = evaluate_command(member, PartyCommand::DesperateAttack, &mut rng);
+        match outcome {
+            ActionOutcome::Obeyed { action_msg } => {
+                let damage: i32 = rng.gen_range(25..=35);
+                let (mon_name, is_dead) = battle.apply_damage(damage);
+
+                let mut msg = format!(
+                    "{}に「すてみ」を　命じた！\n{}\n会心の一撃！　{}に {}の 痛恨のダメージ！",
+                    member.name, action_msg, mon_name, damage
+                );
+
+                if is_dead {
+                    msg.push_str(&format!("\n{}を　たおした！", mon_name));
+                    battle.next_monster();
+                    let next_mon = battle.current_monster();
+                    msg.push_str(&format!("\n続いて　{}が　あらわれた！", next_mon.name));
+                }
+                msg_events.send(ShowMessage(msg));
+            }
+            ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                msg_events.send(ShowMessage(format!(
+                    "{}に「すてみ」を　命じた！\n{}\n{}",
+                    member.name, reason_msg, action_msg
+                )));
+            }
+        };
+    }
+
+    // [4]: 「観察する」
+    if keyboard.just_pressed(KeyCode::Digit4) {
+        let member = &party.members[party.selected_index];
+        let report = diagnose_member(&player.skills, member, &mut rng);
+        let msg = format!("{}\n{}", report.observation_msg, report.conclusion_msg);
+        msg_events.send(ShowMessage(msg));
+    }
+}
+
+fn update_message_window(
+    mut events: EventReader<ShowMessage>,
+    mut query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
+) {
+    for event in events.read() {
+        if let Ok((mut type_msg, mut text)) = query.get_single_mut() {
+            type_msg.full_text = event.0.clone();
+            type_msg.shown_chars = 0;
+            type_msg.timer.reset();
+            *text = Text::new("");
+        }
+    }
+}
+
+fn update_town_texture_system(
+    mut town: ResMut<TownState>,
+    mut images: ResMut<Assets<Image>>,
+) {
     town.update_texture(&mut images);
+}
 
-    // モード切替に伴う中央ノード表示・非表示の更新
-    if mode_changed {
-        if let Ok(mut town_node) = town_image_query.get_single_mut() {
-            town_node.display = match *mode {
-                AppMode::Battle => Display::None,
-                _ => Display::Flex,
-            };
-        }
-        if let Ok((_, mut battle_node)) = battle_monster_query.get_single_mut() {
-            battle_node.display = match *mode {
-                AppMode::Battle => Display::Flex,
-                _ => Display::None,
-            };
-        }
+fn update_center_window_visibility_system(
+    mode: Res<AppMode>,
+    mut town_image_query: Query<&mut Node, (With<TownMapImageNode>, Without<BattleMonsterTextNode>)>,
+    mut battle_monster_query: Query<&mut Node, (With<BattleMonsterTextNode>, Without<TownMapImageNode>)>,
+) {
+    if !mode.is_changed() {
+        return;
     }
+    if let Ok(mut town_node) = town_image_query.get_single_mut() {
+        town_node.display = match *mode {
+            AppMode::Battle => Display::None,
+            _ => Display::Flex,
+        };
+    }
+    if let Ok(mut battle_node) = battle_monster_query.get_single_mut() {
+        battle_node.display = match *mode {
+            AppMode::Battle => Display::Flex,
+            _ => Display::None,
+        };
+    }
+}
 
-    // 戦闘モンスター表示の更新
-    if update_monster_display && *mode == AppMode::Battle {
-        if let Ok((mut text, _)) = battle_monster_query.get_single_mut() {
+fn update_battle_monster_display_system(
+    mode: Res<AppMode>,
+    battle: Res<BattleState>,
+    mut query: Query<&mut Text, With<BattleMonsterTextNode>>,
+) {
+    if *mode != AppMode::Battle {
+        return;
+    }
+    if mode.is_changed() || battle.is_changed() {
+        if let Ok(mut text) = query.get_single_mut() {
             *text = Text::new(format_monster_display(battle.current_monster()));
         }
     }
+}
 
-    // 三分割ウィンドウ（左・右）の更新
-    if update_tri_windows {
-        if let Ok(mut text) = left_window_query.get_single_mut() {
-            *text = Text::new(format_left_window(
-                *mode,
-                &inv,
-                &dialogue_res.0,
-                &command_menu,
-                town.facing_target_kind(),
-            ));
-        }
-        if let Ok(mut text) = right_window_query.get_single_mut() {
-            *text = Text::new(format_right_window(*mode, &dialogue_res.0, &command_menu));
-        }
-    }
-
-    // ヘッダーUIの更新
-    if update_header {
-        if let Ok(mut text) = header_query.get_single_mut() {
+fn update_status_header_system(
+    party: Res<PartyState>,
+    mode: Res<AppMode>,
+    town: Res<TownState>,
+    inv: Res<PlayerInventory>,
+    dialogue: Res<ActiveDialogue>,
+    command_menu: Res<CommandMenuState>,
+    mut query: Query<&mut Text, With<StatusHeaderNode>>,
+) {
+    if party.is_changed()
+        || mode.is_changed()
+        || town.is_changed()
+        || inv.is_changed()
+        || dialogue.is_changed()
+        || command_menu.is_changed()
+    {
+        if let Ok(mut text) = query.get_single_mut() {
             *text = Text::new(format_status_header(
                 &party,
                 *mode,
                 &town,
                 &inv,
-                &dialogue_res.0,
+                &dialogue.0,
                 &command_menu,
             ));
         }
     }
+}
 
-    // メッセージウィンドウの更新
-    if let Some(msg) = new_message {
-        if let Ok((mut type_msg, mut text)) = message_query.get_single_mut() {
-            type_msg.full_text = msg;
-            type_msg.shown_chars = 0;
-            type_msg.timer.reset();
-            *text = Text::new("");
+fn update_tri_split_windows_system(
+    mode: Res<AppMode>,
+    inv: Res<PlayerInventory>,
+    dialogue: Res<ActiveDialogue>,
+    command_menu: Res<CommandMenuState>,
+    town: Res<TownState>,
+    mut left_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
+    mut right_query: Query<&mut Text, (With<RightWindowTextNode>, Without<LeftWindowTextNode>)>,
+) {
+    if mode.is_changed()
+        || inv.is_changed()
+        || dialogue.is_changed()
+        || command_menu.is_changed()
+        || town.is_changed()
+    {
+        let facing_target = town.facing_target_kind();
+        if let Ok(mut text) = left_query.get_single_mut() {
+            *text = Text::new(format_left_window(
+                *mode,
+                &inv,
+                &dialogue.0,
+                &command_menu,
+                facing_target,
+            ));
+        }
+        if let Ok(mut text) = right_query.get_single_mut() {
+            *text = Text::new(format_right_window(*mode, &dialogue.0, &command_menu));
         }
     }
 }

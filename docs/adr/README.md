@@ -20,6 +20,7 @@
 | [ADR-0011](0011-command-driven-interaction.md) | コマンド駆動インタラクト（Zキー→コマンド選択→方向選択）の採用 | Accepted | 2026-09-15 |
 | [ADR-0012](0012-oboeru-underline-phrase-selection.md) | メッセージ内下線語句選択方式による「おぼえる」UXの刷新 | Accepted | 2026-09-15 |
 | [ADR-0013](0013-sudden-event-trigger-system.md) | 突発イベント発生システム（トリガー／抽選エンジン）の設計 | Accepted | 2026-09-15 |
+| [ADR-0014](0014-input-decomposition-and-reactive-ui.md) | 入力処理のモード別分割とチェンジディテクションによるUI更新アーキテクチャ | Accepted | 2026-09-15 |
 
  
 ## フォーマットについて
