@@ -11,8 +11,8 @@ use party::{
     PartyMember, Personality, PlayerInventory, PlayerSkills,
 };
 use town::{
-    CommandKind, DialoguePartner, DialogueSession, InteractOutcome, MoveOutcome, TargetKind,
-    TownState, SHOP_ITEMS,
+    CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
+    LearnableSpan, MoveOutcome, TargetKind, TownState, SHOP_ITEMS,
 };
 
 // ─────────────────────────────────────────────
@@ -79,6 +79,16 @@ struct LeftWindowTextNode;
 
 #[derive(Component)]
 struct MessageTextNode;
+
+/// メッセージ本文と同じグリッドセルに重ねて描画する下線オーバーレイ（ADR-0012）。
+/// 表示完了後、対象語の桁位置に下線グリフを並べる。
+#[derive(Component, Default)]
+struct MessageUnderlineNode;
+
+/// 「おぼえる」候補選択中、カーソルが指す対象語だけを重ね書きしてハイライト色に変える
+/// オーバーレイ（ADR-0012）。それ以外は空文字列にしておく。
+#[derive(Component, Default)]
+struct MessageHighlightNode;
 
 #[derive(Component, Default)]
 struct RightWindowTextNode;
@@ -171,7 +181,12 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (typewriter_tick, handle_input, monster_flash_tick),
+            (
+                typewriter_tick,
+                handle_input,
+                monster_flash_tick,
+                dialogue_underline_tick,
+            ),
         )
         .run();
 }
@@ -274,10 +289,21 @@ fn format_status_header(
             }
             AppMode::Dialogue => {
                 let partner_name = dialogue.as_ref().map(|s| s.partner.name()).unwrap_or("相手");
-                header.push_str(&format!(
-                    "  [会話中: {}] 所持金: {}G | [W/S]で話題選択 | [1]たずねる | [2]おぼえる | [3]はなれる\n",
-                    partner_name, inv.gold
-                ));
+                let learn_stage = dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default();
+                match learn_stage {
+                    DialogueLearnStage::Talking => {
+                        header.push_str(&format!(
+                            "  [会話中: {}] 所持金: {}G | [W/S]で話題選択 | [1]たずねる | [2]おぼえる | [3]はなれる\n",
+                            partner_name, inv.gold
+                        ));
+                    }
+                    DialogueLearnStage::ChoosingLearnTarget { .. } => {
+                        header.push_str(&format!(
+                            "  [会話中: {}] 覚える言葉を選択中 | [W/S]候補選択 | [1]決定 | [3]やめる\n",
+                            partner_name
+                        ));
+                    }
+                }
             }
             AppMode::Interact => {
                 let hint = match command_menu.stage {
@@ -320,7 +346,14 @@ fn format_status_header(
             }
         },
         AppMode::Dialogue => {
-            header.push_str("操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる");
+            match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
+                DialogueLearnStage::Talking => {
+                    header.push_str("操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる");
+                }
+                DialogueLearnStage::ChoosingLearnTarget { .. } => {
+                    header.push_str("操作: [W/S]候補選択 | [1/Enter]決定 | [3/Esc]やめる");
+                }
+            }
         }
         AppMode::Shop => {
             header.push_str("操作: [W/S]商品選択 | [1/Enter]かう | [3/Esc]店を出る");
@@ -417,16 +450,23 @@ fn format_right_window(
             CommandMenuStage::ChoosingDirection(_) => "[WASD]方向選択\n[Esc]やめる".into(),
         },
         AppMode::Dialogue => {
-            let has_learnable = dialogue
-                .as_ref()
-                .and_then(|s| s.learnable_topic.as_ref())
-                .is_some();
-            let learn_str = if has_learnable {
-                "[2]おぼえる★"
-            } else {
-                "[2]おぼえる"
-            };
-            format!("[1]たずねる\n{}\n[3]はなれる\n(W/S:選択)", learn_str)
+            match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
+                DialogueLearnStage::Talking => {
+                    let has_learnable = dialogue
+                        .as_ref()
+                        .map(|s| !s.learnable_spans.is_empty())
+                        .unwrap_or(false);
+                    let learn_str = if has_learnable {
+                        "[2]おぼえる★"
+                    } else {
+                        "[2]おぼえる"
+                    };
+                    format!("[1]たずねる\n{}\n[3]はなれる\n(W/S:選択)", learn_str)
+                }
+                DialogueLearnStage::ChoosingLearnTarget { .. } => {
+                    "[1]決定\n[3]やめる\n\n(W/S:候補選択)".into()
+                }
+            }
         }
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
         AppMode::Inn => "[1]とまる(50G)\n[3]やめる\n\n(HP/MP全回復)".into(),
@@ -666,7 +706,7 @@ fn spawn_sub_message_window(
                 },
                 Text::new(""),
                 TextFont {
-                    font,
+                    font: font.clone(),
                     font_size: CELL_PX * 0.82,
                     ..default()
                 },
@@ -677,6 +717,44 @@ fn spawn_sub_message_window(
                     shown_chars: 0,
                     timer: Timer::from_seconds(0.02, TimerMode::Repeating),
                 },
+            ));
+
+            // 下線オーバーレイ：メッセージ本文と全く同じグリッドセルに重ね、
+            // 対象語の桁位置だけ`_`を並べることで等幅フォント越しに下線を表現する（ADR-0012）。
+            grid.spawn((
+                Node {
+                    grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
+                    grid_row: GridPlacement::start_span(2, outer_rows as u16 - 2),
+                    padding: UiRect::all(Val::Px(4.0)),
+                    ..default()
+                },
+                Text::new(""),
+                TextFont {
+                    font: font.clone(),
+                    font_size: CELL_PX * 0.82,
+                    ..default()
+                },
+                TextColor(palette::FRAME),
+                MessageUnderlineNode,
+            ));
+
+            // ハイライトオーバーレイ：候補選択中のカーソル位置の語だけを重ね書きし、
+            // ハイライト色で「色替え」したように見せる（ADR-0012）。
+            grid.spawn((
+                Node {
+                    grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
+                    grid_row: GridPlacement::start_span(2, outer_rows as u16 - 2),
+                    padding: UiRect::all(Val::Px(4.0)),
+                    ..default()
+                },
+                Text::new(""),
+                TextFont {
+                    font,
+                    font_size: CELL_PX * 0.82,
+                    ..default()
+                },
+                TextColor(palette::TEXT_HIGHLIGHT),
+                MessageHighlightNode,
             ));
         });
 }
@@ -743,6 +821,89 @@ fn typewriter_tick(
             *text = Text::new(shown);
         }
     }
+}
+
+/// テキスト中の各`LearnableSpan`が占める桁位置にだけ`_`を並べた文字列を作る。
+/// 改行はそのまま維持し、行ごとの文字数が本文と一致するようにする
+/// （同一グリッドセルに重ね描きしたときに、対象語の真下に揃うようにするため）。
+fn build_underline_text(text: &str, spans: &[LearnableSpan]) -> String {
+    text.chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if c == '\n' {
+                '\n'
+            } else if spans.iter().any(|s| i >= s.start && i < s.end) {
+                '_'
+            } else {
+                ' '
+            }
+        })
+        .collect()
+}
+
+/// `span`が指す対象語の文字だけをそのまま残し、それ以外を空白に置き換えた文字列を作る。
+/// 本文と同じグリッドセルに重ねて別色で描画することで、対象語だけ色替えしたように見せる。
+fn build_highlight_text(text: &str, span: &LearnableSpan) -> String {
+    text.chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if c == '\n' {
+                '\n'
+            } else if i >= span.start && i < span.end {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect()
+}
+
+/// メッセージの文字送りが完了した後にだけ、下線と候補ハイライトのオーバーレイを更新する（ADR-0012）。
+fn dialogue_underline_tick(
+    mode: Res<AppMode>,
+    dialogue_res: Res<ActiveDialogue>,
+    typewriter_query: Query<&TypewriterMessage, With<MessageTextNode>>,
+    mut underline_query: Query<
+        &mut Text,
+        (With<MessageUnderlineNode>, Without<MessageHighlightNode>),
+    >,
+    mut highlight_query: Query<
+        &mut Text,
+        (With<MessageHighlightNode>, Without<MessageUnderlineNode>),
+    >,
+) {
+    let (Ok(mut underline_text), Ok(mut highlight_text)) =
+        (underline_query.get_single_mut(), highlight_query.get_single_mut())
+    else {
+        return;
+    };
+
+    let session = (*mode == AppMode::Dialogue).then(|| dialogue_res.0.as_ref()).flatten();
+    let Some(session) = session else {
+        *underline_text = Text::new("");
+        *highlight_text = Text::new("");
+        return;
+    };
+
+    let fully_shown = typewriter_query
+        .get_single()
+        .map(|t| t.shown_chars >= t.full_text.chars().count())
+        .unwrap_or(false);
+
+    if fully_shown && !session.learnable_spans.is_empty() {
+        *underline_text = Text::new(build_underline_text(&session.current_text, &session.learnable_spans));
+    } else {
+        *underline_text = Text::new("");
+    }
+
+    *highlight_text = match session.learn_stage {
+        DialogueLearnStage::ChoosingLearnTarget { cursor } if fully_shown => session
+            .learnable_spans
+            .get(cursor)
+            .map(|span| Text::new(build_highlight_text(&session.current_text, span)))
+            .unwrap_or_else(|| Text::new("")),
+        _ => Text::new(""),
+    };
 }
 
 fn monster_flash_tick(
@@ -1009,62 +1170,134 @@ fn handle_input(
             }
         },
         AppMode::Dialogue => {
-            // [W/S]: 話題選択
-            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    session.selected_topic_index = session.selected_topic_index.saturating_sub(1);
-                    update_tri_windows = true;
-                }
-            }
-            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    let max_idx = inv.topics.len().saturating_sub(1);
-                    if session.selected_topic_index < max_idx {
-                        session.selected_topic_index += 1;
-                        update_tri_windows = true;
-                    }
-                }
-            }
+            let learn_stage = dialogue_res
+                .0
+                .as_ref()
+                .map(|s| s.learn_stage)
+                .unwrap_or_default();
 
-            // [1] / [Enter]: 話題を振る
-            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    if let Some(topic) = inv.topics.get(session.selected_topic_index).cloned() {
-                        session.ask_topic(&topic);
-                        new_message = Some(session.current_text.clone());
-                        update_tri_windows = true;
-                    }
-                }
-            }
-
-            // [2]: 「おぼえる」キーワードを手帳にストック
-            if keyboard.just_pressed(KeyCode::Digit2) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    if let Some(new_topic) = session.learnable_topic.take() {
-                        let learned = inv.learn_topic(&new_topic);
-                        if learned {
-                            new_message = Some(format!(
-                                "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
-                                new_topic
-                            ));
-                        } else {
-                            new_message = Some(format!("【{}】は既に覚えている。", new_topic));
+            match learn_stage {
+                DialogueLearnStage::Talking => {
+                    // [W/S]: 話題選択
+                    if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            session.selected_topic_index = session.selected_topic_index.saturating_sub(1);
+                            update_tri_windows = true;
                         }
+                    }
+                    if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            let max_idx = inv.topics.len().saturating_sub(1);
+                            if session.selected_topic_index < max_idx {
+                                session.selected_topic_index += 1;
+                                update_tri_windows = true;
+                            }
+                        }
+                    }
+
+                    // [1] / [Enter]: 話題を振る
+                    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            if let Some(topic) = inv.topics.get(session.selected_topic_index).cloned() {
+                                session.ask_topic(&topic);
+                                new_message = Some(session.current_text.clone());
+                                update_tri_windows = true;
+                            }
+                        }
+                    }
+
+                    // [2]: 「おぼえる」。下線候補の数に応じて挙動が変わる（ADR-0012）。
+                    // 0件は従来どおり、1件は即座に覚える、2件以上は本文中の下線候補選択モードへ。
+                    if keyboard.just_pressed(KeyCode::Digit2) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            match session.learnable_spans.len() {
+                                0 => {
+                                    new_message =
+                                        Some("新しく覚えられるキーワードは見当たらない。".into());
+                                }
+                                1 => {
+                                    let word = session.learnable_spans[0].slice(&session.current_text);
+                                    let learned = inv.learn_topic(&word);
+                                    new_message = Some(if learned {
+                                        format!(
+                                            "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                            word
+                                        )
+                                    } else {
+                                        format!("【{}】は既に覚えている。", word)
+                                    });
+                                }
+                                _ => {
+                                    session.learn_stage =
+                                        DialogueLearnStage::ChoosingLearnTarget { cursor: 0 };
+                                    update_header = true;
+                                }
+                            }
+                            update_tri_windows = true;
+                        }
+                    }
+
+                    // [3] / [Esc]: 会話を終える
+                    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape)
+                    {
+                        dialogue_res.0 = None;
+                        *mode = AppMode::Town;
+                        new_message = Some("会話を終えて、再び歩き出した。".into());
+                        mode_changed = true;
+                        update_header = true;
                         update_tri_windows = true;
-                    } else {
-                        new_message = Some("新しく覚えられるキーワードは見当たらない。".into());
                     }
                 }
-            }
+                DialogueLearnStage::ChoosingLearnTarget { cursor } => {
+                    // [W/S]: 下線候補のカーソル移動（本文中の出現順を循環）
+                    if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            let len = session.learnable_spans.len().max(1);
+                            session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
+                                cursor: (cursor + len - 1) % len,
+                            };
+                        }
+                    }
+                    if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            let len = session.learnable_spans.len().max(1);
+                            session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
+                                cursor: (cursor + 1) % len,
+                            };
+                        }
+                    }
 
-            // [3] / [Esc]: 会話を終える
-            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
-                dialogue_res.0 = None;
-                *mode = AppMode::Town;
-                new_message = Some("会話を終えて、再び歩き出した。".into());
-                mode_changed = true;
-                update_header = true;
-                update_tri_windows = true;
+                    // [1] / [Enter]: カーソル位置の候補を確定して覚える
+                    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            if let Some(span) = session.learnable_spans.get(cursor).copied() {
+                                let word = span.slice(&session.current_text);
+                                let learned = inv.learn_topic(&word);
+                                new_message = Some(if learned {
+                                    format!(
+                                        "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                        word
+                                    )
+                                } else {
+                                    format!("【{}】は既に覚えている。", word)
+                                });
+                            }
+                            session.learn_stage = DialogueLearnStage::Talking;
+                            update_header = true;
+                            update_tri_windows = true;
+                        }
+                    }
+
+                    // [3] / [Esc]: 何も覚えずに選択をやめる（会話自体は終えない）
+                    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape)
+                    {
+                        if let Some(session) = dialogue_res.0.as_mut() {
+                            session.learn_stage = DialogueLearnStage::Talking;
+                        }
+                        update_header = true;
+                        update_tri_windows = true;
+                    }
+                }
             }
         }
         AppMode::Shop => {
