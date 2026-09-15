@@ -1,29 +1,21 @@
 pub mod dialogue;
 pub mod fov;
-pub mod input;
 pub mod interact;
 pub mod map;
 pub mod movement;
-pub mod pixel_art;
 
 pub use dialogue::{DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, SHOP_ITEMS};
-pub use input::{
-    handle_dialogue_input, handle_inn_input, handle_interact_input, handle_shop_input,
-    handle_town_input, handle_travel_input,
-};
+pub use fov::FovMap;
 pub use interact::{CommandKind, InteractOutcome, TargetKind};
-pub use map::AreaId;
-pub use movement::{try_move_player, MoveOutcome, Position};
+pub use map::{AreaId, TileType, TownMap};
+pub use movement::{try_move_player, Facing, FollowerHistory, MoveOutcome, Position};
 
-use bevy::prelude::*;
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use fov::FovMap;
-use map::{TileType, TownMap};
-use movement::{Facing, FollowerHistory};
-use pixel_art::{render_town_to_texture, TEXTURE_HEIGHT, TEXTURE_WIDTH};
-
-#[derive(Resource)]
+/// 街・迷宮の探索状態（ADR-0006/0010ほか）。
+///
+/// テクスチャ描画（`pixel_art`によるRGBAバッファ生成とBevyの`Image`管理）は
+/// UI側の関心事のため、ここでは持たない。描画が必要なホスト側（`app`クレート）
+/// は`map` / `fov` / `player_pos` / `player_facing` / `followers` / `dirty`を
+/// 読み取ってテクスチャを再生成する。
 pub struct TownState {
     pub current_area: AreaId,
     pub map: TownMap,
@@ -33,19 +25,17 @@ pub struct TownState {
     pub followers: FollowerHistory,
     pub torch_active: bool,
     pub debug_see_all: bool,
-    pub texture_handle: Handle<Image>,
+    /// 描画側（テクスチャ）の再生成が必要かどうかを示すフラグ。
     pub dirty: bool,
 }
 
 impl TownState {
-    pub fn new(images: &mut Assets<Image>) -> Self {
+    pub fn new() -> Self {
         let current_area = AreaId::Town;
         let map = TownMap::create_arkan_capital();
         let fov = FovMap::new(map.width, map.height);
         let player_pos = Position { x: 20, y: 5 }; // 中央広場下
         let followers = FollowerHistory::new(Position { x: 20, y: 6 }, 3);
-
-        let mut buffer = vec![0u8; TEXTURE_WIDTH * TEXTURE_HEIGHT * 4];
 
         let mut state = Self {
             current_area,
@@ -56,33 +46,9 @@ impl TownState {
             followers,
             torch_active: true,
             debug_see_all: false,
-            texture_handle: Handle::default(),
             dirty: true,
         };
         state.recompute_fov();
-
-        render_town_to_texture(
-            &state.map,
-            &state.fov,
-            state.player_pos,
-            &state.followers,
-            &mut buffer,
-        );
-
-        let mut image = Image::new(
-            Extent3d {
-                width: TEXTURE_WIDTH as u32,
-                height: TEXTURE_HEIGHT as u32,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            buffer,
-            TextureFormat::Rgba8UnormSrgb,
-            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-        );
-        image.sampler = bevy::image::ImageSampler::nearest();
-
-        state.texture_handle = images.add(image);
         state
     }
 
@@ -173,20 +139,10 @@ impl TownState {
         }
         outcome
     }
+}
 
-    pub fn update_texture(&mut self, images: &mut Assets<Image>) {
-        if !self.dirty {
-            return;
-        }
-        if let Some(image) = images.get_mut(&self.texture_handle) {
-            render_town_to_texture(
-                &self.map,
-                &self.fov,
-                self.player_pos,
-                &self.followers,
-                &mut image.data,
-            );
-        }
-        self.dirty = false;
+impl Default for TownState {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -9,16 +9,27 @@
 1. 等幅フォント
    - 標準で **Bizin Gothic**（`assets/fonts/BizinGothic-Regular.ttf`）を適用しています。
    - **Mint Mono**（`assets/fonts/MintMono-Regular.ttf`）も同梱しています。
-   - `src/main.rs` 内 `FONT_PATH` で即座に切り替え可能です。
+   - `app/src/ui/mod.rs` 内 `FONT_PATH` で即座に切り替え可能です。
    - （その他、HackGen や BIZ UDゴシック も同梱済み）
 
 2. 実行
 
 ```bash
-cargo run
+cargo run -p glyphfall
 ```
 
 初回は Bevy のコンパイルに数分かかります（`dynamic_linking` feature で2回目以降は高速化されます）。
+
+## ワークスペース構成（ADR-0016）
+
+Cargoワークスペースとして `core/`（`glyphfall-core`: Bevy非依存のゲームロジック）と
+`app/`（`glyphfall`: Bevy製の実行バイナリ）に分割しています。
+
+```bash
+cargo build -p glyphfall-core  # ロジックのみ。Bevyは一切ビルドされない
+cargo test -p glyphfall-core   # ロジックのユニットテスト
+cargo run -p glyphfall         # ゲームを起動
+```
 
 ## 今の実装が持っているもの
 
@@ -84,6 +95,8 @@ cargo run
 - [ADR-0012: メッセージ内下線語句選択方式による「おぼえる」UXの刷新](docs/adr/0012-oboeru-underline-phrase-selection.md)
 - [ADR-0013: 突発イベント発生システム（トリガー／抽選エンジン）の設計](docs/adr/0013-sudden-event-trigger-system.md)
 - [ADR-0014: 入力処理のモード別分割とチェンジディテクションによるUI更新アーキテクチャ](docs/adr/0014-input-decomposition-and-reactive-ui.md)
+- [ADR-0015: 仲間指示型ターン制戦闘ループと「あなた」実体化・ファイル責務再編](docs/adr/0015-turn-based-battle-and-module-decomposition.md)
+- [ADR-0016: Cargoワークスペース化によるロジックコア（`glyphfall-core`）とBevy皮（`glyphfall`/`app`）の分離](docs/adr/0016-cargo-workspace-core-app-split.md)
 
 
 

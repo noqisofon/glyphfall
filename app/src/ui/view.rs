@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use crate::{
-    battle::{BattlePhase, BattleState, Monster},
-    party::{influence::MentalState, influence::Personality, PartyState},
-    town::{DialogueLearnStage, DialogueSession, TargetKind, TownState},
-    ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventory,
+    battle::{BattlePhase, BattleState, BattleStateRes, Monster},
+    party::{MentalState, PartyState, PartyStateRes, PlayerInventory, Personality},
+    town::{DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes},
+    ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
     TravelState, SHOP_ITEMS,
 };
 use super::{
@@ -329,7 +329,7 @@ pub fn format_monster_display(monster: &Monster) -> String {
 }
 
 pub fn update_town_texture_system(
-    mut town: ResMut<TownState>,
+    mut town: ResMut<TownStateRes>,
     mut images: ResMut<Assets<Image>>,
 ) {
     town.update_texture(&mut images);
@@ -359,7 +359,7 @@ pub fn update_center_window_visibility_system(
 
 pub fn update_battle_monster_display_system(
     mode: Res<AppMode>,
-    battle: Res<BattleState>,
+    battle: Res<BattleStateRes>,
     mut query: Query<&mut Text, With<BattleMonsterTextNode>>,
 ) {
     if *mode != AppMode::Battle {
@@ -373,10 +373,10 @@ pub fn update_battle_monster_display_system(
 }
 
 pub fn update_status_header_system(
-    party: Res<PartyState>,
+    party: Res<PartyStateRes>,
     mode: Res<AppMode>,
-    town: Res<TownState>,
-    inv: Res<PlayerInventory>,
+    town: Res<TownStateRes>,
+    inv: Res<PlayerInventoryRes>,
     dialogue: Res<ActiveDialogue>,
     command_menu: Res<CommandMenuState>,
     travel: Res<TravelState>,
@@ -406,13 +406,13 @@ pub fn update_status_header_system(
 
 pub fn update_tri_split_windows_system(
     mode: Res<AppMode>,
-    inv: Res<PlayerInventory>,
+    inv: Res<PlayerInventoryRes>,
     dialogue: Res<ActiveDialogue>,
     command_menu: Res<CommandMenuState>,
-    town: Res<TownState>,
+    town: Res<TownStateRes>,
     travel: Res<TravelState>,
-    battle: Res<BattleState>,
-    party: Res<PartyState>,
+    battle: Res<BattleStateRes>,
+    party: Res<PartyStateRes>,
     mut left_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
     mut right_query: Query<&mut Text, (With<RightWindowTextNode>, Without<LeftWindowTextNode>)>,
 ) {

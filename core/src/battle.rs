@@ -1,15 +1,12 @@
-use bevy::prelude::*;
 use rand::Rng;
 use crate::party::{
     diagnose_member, evaluate_command, ActionOutcome, PartyCommand, PartyMember, Personality,
     PlayerBattleAction, PlayerSkills,
 };
-
-pub mod input;
-pub use input::handle_battle_input;
+use crate::timer::SimpleTimer;
 
 /// 敵モンスターの定義
-#[derive(Component, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Monster {
     pub name: String,
     pub hp: i32,
@@ -62,11 +59,10 @@ pub struct BattleStep {
 }
 
 /// 戦闘状態の管理リソース
-#[derive(Resource)]
 pub struct BattleState {
     pub current_index: usize,
     pub monsters: Vec<Monster>,
-    pub flash_timer: Timer,
+    pub flash_timer: SimpleTimer,
     pub is_flashing: bool,
     pub phase: BattlePhase,
     pub player_action: Option<PlayerBattleAction>,
@@ -79,7 +75,7 @@ impl BattleState {
         Self {
             current_index: 0,
             monsters,
-            flash_timer: Timer::from_seconds(0.18, TimerMode::Once),
+            flash_timer: SimpleTimer::from_seconds(0.18),
             is_flashing: false,
             phase: BattlePhase::CommandInput { member_cursor: 0 },
             player_action: None,

@@ -1,5 +1,3 @@
-use bevy::prelude::*;
-
 pub mod action;
 pub mod diagnosis;
 pub mod influence;
@@ -12,7 +10,7 @@ pub use inventory::PlayerInventory;
 pub use influence::{Influence, MentalState, PartyMember, Personality, MAX_NATURAL_INFLUENCE};
 
 /// 将来のルイーダの酒場（パーティ編成所）用の控えメンバーリスト
-#[derive(Resource, Default, Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 #[allow(dead_code)]
 pub struct ReserveRoster {
     pub members: Vec<PartyMember>,
@@ -26,7 +24,7 @@ impl ReserveRoster {
 }
 
 /// 現在同行中のパーティメンバーと注目中の仲間インデックス
-#[derive(Resource, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct PartyState {
     pub members: Vec<PartyMember>,
     pub selected_index: usize,
@@ -34,7 +32,7 @@ pub struct PartyState {
 }
 
 /// プレイヤー自身の診断スキルなどのリソース
-#[derive(Resource, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct PlayerResource {
     pub skills: PlayerSkills,
 }

@@ -1,23 +1,23 @@
 use bevy::prelude::*;
 use rand::thread_rng;
 use crate::{
-    AppMode, CommandMenuStage, CommandMenuState, PartyState, ShowMessage, TravelPosture,
+    AppMode, CommandMenuStage, CommandMenuState, PartyStateRes, ShowMessage, TravelPosture,
     TravelState,
 };
 use crate::event::{
-    try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistory, SuddenEventRegistry,
+    try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes,
 };
-use crate::party::PlayerInventory;
+use crate::party::PlayerInventoryRes;
 use super::{
     CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
-    MoveOutcome, TownState, SHOP_ITEMS,
+    MoveOutcome, TownStateRes, SHOP_ITEMS,
 };
 use crate::ActiveDialogue;
 
 pub fn handle_town_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut town: ResMut<TownState>,
+    mut town: ResMut<TownStateRes>,
     mut command_menu: ResMut<CommandMenuState>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut travel_state: ResMut<TravelState>,
@@ -107,8 +107,8 @@ pub fn handle_town_input(
 pub fn handle_interact_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut town: ResMut<TownState>,
-    mut inv: ResMut<PlayerInventory>,
+    mut town: ResMut<TownStateRes>,
+    mut inv: ResMut<PlayerInventoryRes>,
     mut command_menu: ResMut<CommandMenuState>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
@@ -205,7 +205,7 @@ pub fn handle_interact_input(
 pub fn handle_dialogue_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut inv: ResMut<PlayerInventory>,
+    mut inv: ResMut<PlayerInventoryRes>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
@@ -329,7 +329,7 @@ pub fn handle_dialogue_input(
 pub fn handle_shop_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut inv: ResMut<PlayerInventory>,
+    mut inv: ResMut<PlayerInventoryRes>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
@@ -376,8 +376,8 @@ pub fn handle_shop_input(
 pub fn handle_inn_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut party: ResMut<PartyState>,
-    mut inv: ResMut<PlayerInventory>,
+    mut party: ResMut<PartyStateRes>,
+    mut inv: ResMut<PlayerInventoryRes>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
@@ -400,10 +400,10 @@ pub fn handle_inn_input(
 pub fn handle_travel_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut town: ResMut<TownState>,
+    mut town: ResMut<TownStateRes>,
     travel_state: Res<TravelState>,
-    event_registry: Res<SuddenEventRegistry>,
-    mut event_history: ResMut<SuddenEventHistory>,
+    event_registry: Res<SuddenEventRegistryRes>,
+    mut event_history: ResMut<SuddenEventHistoryRes>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {

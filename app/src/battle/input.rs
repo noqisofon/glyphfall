@@ -1,15 +1,15 @@
 use bevy::prelude::*;
 use rand::thread_rng;
-use crate::{AppMode, PartyState, PlayerResource, ShowMessage};
+use crate::{AppMode, PartyStateRes, PlayerResourceRes, ShowMessage};
 use crate::party::{PartyCommand, PlayerBattleAction};
-use super::{BattlePhase, BattleState};
+use super::{BattlePhase, BattleStateRes};
 
 pub fn handle_battle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
-    mut party: ResMut<PartyState>,
-    player: Res<PlayerResource>,
-    mut battle: ResMut<BattleState>,
+    mut party: ResMut<PartyStateRes>,
+    player: Res<PlayerResourceRes>,
+    mut battle: ResMut<BattleStateRes>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
     let mut rng = thread_rng();

@@ -5,7 +5,6 @@
 //! 発生後の効果（会話・戦闘突入など）はここでは扱わず、`SuddenEventTriggered` を
 //! 受け取った呼び出し側（現状は `main.rs` の旅シミュレーション処理）に委ねる。
 
-use bevy::prelude::Resource;
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 
@@ -43,7 +42,6 @@ pub struct SuddenEventDef {
 /// 起動時にロードするイベント定義の一覧（ADR-0013時点ではRustのリテラル定義。
 /// 将来Luaなど外部スクリプトからのロードに差し替える際も、この構造体の形は
 /// 変えずにロード元だけを差し替えられるようにしてある）。
-#[derive(Resource)]
 pub struct SuddenEventRegistry {
     pub events: Vec<SuddenEventDef>,
 }
@@ -101,7 +99,7 @@ impl SuddenEventRegistry {
 }
 
 /// イベントごとのクールダウン・一発限り消化状況（ADR-0013）。
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct SuddenEventHistory {
     /// 街道移動（旅）を1回試みるごとに1つ進む単調カウンタ。実時間や日数ではなく
     /// 「旅を何回試みたか」を単位にすることで、時間経過システム未実装のうちも
