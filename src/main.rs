@@ -2,17 +2,21 @@ use bevy::prelude::*;
 use rand::{thread_rng, Rng};
 
 mod battle;
+mod event;
 mod party;
 mod town;
 
 use battle::{create_default_monsters, BattleState, Monster};
+use event::{
+    try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistory, SuddenEventRegistry,
+};
 use party::{
     diagnose_member, evaluate_command, ActionOutcome, Influence, MentalState, PartyCommand,
     PartyMember, Personality, PlayerInventory, PlayerSkills,
 };
 use town::{
-    CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
-    LearnableSpan, MoveOutcome, TargetKind, TownState, SHOP_ITEMS,
+    AreaId, CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
+    LearnableSpan, MoveOutcome, Position, TargetKind, TownState, SHOP_ITEMS,
 };
 
 // ─────────────────────────────────────────────
@@ -50,6 +54,52 @@ pub enum AppMode {
     Shop,
     Inn,
     Battle,
+    /// ADR-0004/ADR-0013: 街道口で移動姿勢を選択している最中。
+    Travel,
+}
+
+/// 旅シミュレーション（ADR-0004）の移動姿勢。基礎エンカウント率のみを扱う
+/// 最小実装で、移動時間短縮などのメリットは今後の課題とする。
+#[derive(Clone, Copy, Debug)]
+enum TravelPosture {
+    Cautious,
+    Normal,
+    Bold,
+}
+
+impl TravelPosture {
+    fn label(&self) -> &'static str {
+        match self {
+            TravelPosture::Cautious => "慎重に",
+            TravelPosture::Normal => "普通に",
+            TravelPosture::Bold => "大胆に",
+        }
+    }
+
+    /// ADR-0004の姿勢別エンカウント率表に対応する基礎確率。
+    fn base_probability(&self) -> f32 {
+        match self {
+            TravelPosture::Cautious => 0.15,
+            TravelPosture::Normal => 0.35,
+            TravelPosture::Bold => 0.65,
+        }
+    }
+}
+
+/// 街道口に接触してから移動姿勢が確定するまでの間、行き先を保持しておくための状態。
+#[derive(Resource)]
+struct TravelState {
+    destination: AreaId,
+    spawn_pos: Position,
+}
+
+impl Default for TravelState {
+    fn default() -> Self {
+        Self {
+            destination: AreaId::Town,
+            spawn_pos: Position { x: 0, y: 0 },
+        }
+    }
 }
 
 fn in_mode(target: AppMode) -> impl Fn(Res<AppMode>) -> bool {
@@ -139,6 +189,9 @@ fn main() {
         .insert_resource(PlayerInventory::default())
         .insert_resource(ActiveDialogue::default())
         .insert_resource(CommandMenuState::default())
+        .insert_resource(TravelState::default())
+        .insert_resource(SuddenEventRegistry::travel_default())
+        .insert_resource(SuddenEventHistory::default())
         .insert_resource(PlayerResource {
             skills: PlayerSkills {
                 magic_knowledge: 45,
@@ -199,6 +252,7 @@ fn main() {
                     handle_shop_input.run_if(in_mode(AppMode::Shop)),
                     handle_inn_input.run_if(in_mode(AppMode::Inn)),
                     handle_battle_input.run_if(in_mode(AppMode::Battle)),
+                    handle_travel_input.run_if(in_mode(AppMode::Travel)),
                 ),
                 (
                     update_message_window,
@@ -266,6 +320,7 @@ fn format_status_header(
     inv: &PlayerInventory,
     dialogue: &Option<DialogueSession>,
     command_menu: &CommandMenuState,
+    travel: &TravelState,
 ) -> String {
     let member = &party.members[party.selected_index];
     let mut header = format!(
@@ -355,6 +410,13 @@ fn format_status_header(
             AppMode::Battle => {
                 header.push_str("  [地下封鎖迷宮・戦闘交戦中] (F1キーで開発用隠しパラメータを表示)\n");
             }
+            AppMode::Travel => {
+                header.push_str(&format!(
+                    "  [街道・移動姿勢選択中] 行き先: {} | 所持金: {}G\n",
+                    travel.destination.name(),
+                    inv.gold
+                ));
+            }
         }
     }
 
@@ -389,6 +451,9 @@ fn format_status_header(
         AppMode::Battle => {
             header.push_str("操作: [1]たたかう | [2]みをまもる | [3]すてみ | [4]観察 | [N]敵切替 | [B]街へ帰還");
         }
+        AppMode::Travel => {
+            header.push_str("操作: [1]慎重に | [2]普通に | [3]大胆に | [Esc]やめる");
+        }
     }
 
     header
@@ -400,6 +465,7 @@ fn format_left_window(
     dialogue: &Option<DialogueSession>,
     command_menu: &CommandMenuState,
     facing_target: TargetKind,
+    travel: &TravelState,
 ) -> String {
     match mode {
         AppMode::Interact => match command_menu.stage {
@@ -461,6 +527,12 @@ fn format_left_window(
                 inv.gold
             )
         }
+        AppMode::Travel => {
+            format!(
+                "【街道】\n行き先:\n{}\n\nどのように\n進みますか？",
+                travel.destination.name()
+            )
+        }
     }
 }
 
@@ -497,6 +569,7 @@ fn format_right_window(
         AppMode::Inn => "[1]とまる(50G)\n[3]やめる\n\n(HP/MP全回復)".into(),
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
         AppMode::Battle => "[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]観察\n[B]街へ帰還".into(),
+        AppMode::Travel => "[1]慎重に\n[2]普通に\n[3]大胆に\n[Esc]やめる".into(),
     }
 }
 
@@ -553,6 +626,7 @@ fn spawn_status_window(
                     inv,
                     &None,
                     &CommandMenuState::default(),
+                    &TravelState::default(),
                 )),
                 TextFont {
                     font,
@@ -646,6 +720,7 @@ fn spawn_tri_split_window(
                     &None,
                     &CommandMenuState::default(),
                     TargetKind::Nothing,
+                    &TravelState::default(),
                 ),
             );
 
@@ -1009,6 +1084,7 @@ fn handle_town_input(
     mut town: ResMut<TownState>,
     mut command_menu: ResMut<CommandMenuState>,
     mut dialogue_res: ResMut<ActiveDialogue>,
+    mut travel_state: ResMut<TravelState>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
     // [L]: 松明のON/OFF切り替え
@@ -1058,6 +1134,18 @@ fn handle_town_input(
             }
             MoveOutcome::ChangeArea { message, .. } => {
                 msg_events.send(ShowMessage(message));
+            }
+            MoveOutcome::RequestTravel {
+                destination,
+                spawn_pos,
+            } => {
+                travel_state.destination = destination;
+                travel_state.spawn_pos = spawn_pos;
+                *mode = AppMode::Travel;
+                msg_events.send(ShowMessage(format!(
+                    "{}へ続く街道だ。どのように進みますか？\n[1]慎重に [2]普通に [3]大胆に（[Esc]でやめる）",
+                    destination.name()
+                )));
             }
         }
     }
@@ -1486,6 +1574,69 @@ fn handle_battle_input(
     }
 }
 
+fn handle_travel_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut mode: ResMut<AppMode>,
+    mut town: ResMut<TownState>,
+    travel_state: Res<TravelState>,
+    event_registry: Res<SuddenEventRegistry>,
+    mut event_history: ResMut<SuddenEventHistory>,
+    mut dialogue_res: ResMut<ActiveDialogue>,
+    mut msg_events: EventWriter<ShowMessage>,
+) {
+    // ADR-0004: 移動姿勢（慎重に／普通に／大胆に）を選択し、旅シミュレーションを実行する。
+    // ADR-0013の発生エンジンで道中の突発イベントを2段階抽選する。
+    let posture = if keyboard.just_pressed(KeyCode::Digit1) {
+        Some(TravelPosture::Cautious)
+    } else if keyboard.just_pressed(KeyCode::Digit2) {
+        Some(TravelPosture::Normal)
+    } else if keyboard.just_pressed(KeyCode::Digit3) {
+        Some(TravelPosture::Bold)
+    } else {
+        None
+    };
+
+    if let Some(posture) = posture {
+        let mut rng = thread_rng();
+        let triggered = try_trigger_sudden_event(
+            &event_registry,
+            &mut event_history,
+            posture.base_probability(),
+            &mut rng,
+        );
+
+        let destination = travel_state.destination;
+        let spawn_pos = travel_state.spawn_pos;
+
+        let mut msg = format!(
+            "{}進み、{}へ向かった。\n",
+            posture.label(),
+            destination.name()
+        );
+        match triggered {
+            Some(evt) => msg.push_str(evt.message),
+            None => msg.push_str("道中、特に何も起こらなかった。"),
+        }
+
+        town.switch_area(destination, spawn_pos);
+
+        match triggered.map(|evt| evt.category) {
+            Some(SuddenEventCategory::Bandit) | Some(SuddenEventCategory::WildAnimal) => {
+                *mode = AppMode::Battle;
+                dialogue_res.0 = None;
+            }
+            _ => {
+                *mode = AppMode::Town;
+            }
+        }
+
+        msg_events.send(ShowMessage(msg));
+    } else if keyboard.just_pressed(KeyCode::Escape) {
+        *mode = AppMode::Town;
+        msg_events.send(ShowMessage("街道を進むのをやめた。".into()));
+    }
+}
+
 fn update_message_window(
     mut events: EventReader<ShowMessage>,
     mut query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
@@ -1551,6 +1702,7 @@ fn update_status_header_system(
     inv: Res<PlayerInventory>,
     dialogue: Res<ActiveDialogue>,
     command_menu: Res<CommandMenuState>,
+    travel: Res<TravelState>,
     mut query: Query<&mut Text, With<StatusHeaderNode>>,
 ) {
     if party.is_changed()
@@ -1559,6 +1711,7 @@ fn update_status_header_system(
         || inv.is_changed()
         || dialogue.is_changed()
         || command_menu.is_changed()
+        || travel.is_changed()
     {
         if let Ok(mut text) = query.get_single_mut() {
             *text = Text::new(format_status_header(
@@ -1568,6 +1721,7 @@ fn update_status_header_system(
                 &inv,
                 &dialogue.0,
                 &command_menu,
+                &travel,
             ));
         }
     }
@@ -1579,6 +1733,7 @@ fn update_tri_split_windows_system(
     dialogue: Res<ActiveDialogue>,
     command_menu: Res<CommandMenuState>,
     town: Res<TownState>,
+    travel: Res<TravelState>,
     mut left_query: Query<&mut Text, (With<LeftWindowTextNode>, Without<RightWindowTextNode>)>,
     mut right_query: Query<&mut Text, (With<RightWindowTextNode>, Without<LeftWindowTextNode>)>,
 ) {
@@ -1587,6 +1742,7 @@ fn update_tri_split_windows_system(
         || dialogue.is_changed()
         || command_menu.is_changed()
         || town.is_changed()
+        || travel.is_changed()
     {
         let facing_target = town.facing_target_kind();
         if let Ok(mut text) = left_query.get_single_mut() {
@@ -1596,6 +1752,7 @@ fn update_tri_split_windows_system(
                 &dialogue.0,
                 &command_menu,
                 facing_target,
+                &travel,
             ));
         }
         if let Ok(mut text) = right_query.get_single_mut() {

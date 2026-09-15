@@ -62,6 +62,13 @@ pub enum MoveOutcome {
         spawn_pos: Position,
         message: String,
     },
+    /// 街道口（`RoadExit`）に接触した。即座に移動はせず、呼び出し側が移動姿勢選択
+    /// （ADR-0004）→ 突発イベント発生ロール（ADR-0013）を経てから`destination`へ
+    /// 実際に移動するかどうかを決める。
+    RequestTravel {
+        destination: AreaId,
+        spawn_pos: Position,
+    },
 }
 
 pub fn try_move_player(
@@ -122,6 +129,8 @@ pub fn try_move_player(
                         message: "さらに深層への下り階段に足を踏み入れた！\n地下奥深くから強大な魔物の咆哮が響く……！([B]キーで戦闘突入)".into(),
                     }
                 }
+                // 村には地下迷宮への階段は存在しない（到達不能なタイルのため実質デッドコード）。
+                AreaId::Village => MoveOutcome::Blocked { message: None },
             }
         }
         TileType::StairsUp => {
@@ -133,13 +142,22 @@ pub fn try_move_player(
                         message: "階段を駆け上がり、夜風が吹き抜ける王都アルカンへ無事に生還した！".into(),
                     }
                 }
-                AreaId::Town => {
-                    MoveOutcome::Blocked {
-                        message: Some("見上げるような高い塔の扉は固く閉ざされている。".into()),
-                    }
-                }
+                AreaId::Town | AreaId::Village => MoveOutcome::Blocked {
+                    message: Some("見上げるような高い塔の扉は固く閉ざされている。".into()),
+                },
             }
         }
+        TileType::RoadExit => match current_area {
+            AreaId::Town => MoveOutcome::RequestTravel {
+                destination: AreaId::Village,
+                spawn_pos: Position { x: 44, y: 6 },
+            },
+            AreaId::Village => MoveOutcome::RequestTravel {
+                destination: AreaId::Town,
+                spawn_pos: Position { x: 1, y: 6 },
+            },
+            AreaId::DungeonB1F => MoveOutcome::Blocked { message: None },
+        },
         TileType::DoorClosed => {
             map.set(target_x, target_y, TileType::DoorOpen);
             MoveOutcome::Blocked {
