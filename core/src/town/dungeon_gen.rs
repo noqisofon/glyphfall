@@ -640,7 +640,8 @@ mod tests {
     }
 
     /// ADR-0018: テンプレート部屋を2個選ぶ場合、多数の実際の洞窟形状に対して
-    /// 選ばれた2つの矩形が座標的に重ならないことを確認する。
+    /// 選ばれた2つの矩形が座標的に重ならないこと、かつ`build_map`が実際に使う
+    /// `reserved`（入口・上り階段・下り階段）とも重ならないことを確認する。
     #[test]
     fn test_template_slots_never_overlap_across_many_cave_shapes() {
         let width = 46;
@@ -662,12 +663,27 @@ mod tests {
             }
 
             let region_set: HashSet<(i32, i32)> = region.iter().copied().collect();
+
+            // `build_map`と同じ手順で上り階段・下り階段を求め、同じ`reserved`
+            // 集合（入口・上り階段・下り階段）をforbiddenとして使う。テンプレート
+            // 探索ロジック単体ではなく、本番の`build_map`が実際に組む条件と
+            // 一致させることで、階段との座標衝突が起きないことも合わせて検証する。
+            let stairs_up = neighbors4(entrance.0, entrance.1)
+                .into_iter()
+                .find(|p| region_set.contains(p))
+                .unwrap_or(entrance);
             let distances = bfs_distances(&region, width, height, entrance);
+            let exit = distances
+                .iter()
+                .max_by_key(|(_, d)| *d)
+                .map(|(p, _)| *p)
+                .unwrap_or(entrance);
+            let reserved: HashSet<(i32, i32)> = [entrance, stairs_up, exit].into_iter().collect();
+
             let mut sorted_by_dist = distances.clone();
             sorted_by_dist.sort_by(|a, b| b.1.cmp(&a.1));
-            let forbidden: HashSet<(i32, i32)> = [entrance].into_iter().collect();
 
-            let slots = find_template_slots(&sorted_by_dist, &region_set, &forbidden, 2);
+            let slots = find_template_slots(&sorted_by_dist, &region_set, &reserved, 2);
             if slots.len() == 2 {
                 checked_two_slots += 1;
                 assert!(
@@ -681,6 +697,12 @@ mod tests {
                         template_rect_fits(&region_set, &HashSet::new(), top_left),
                         "seed {seed}: template rect {top_left:?} does not fully fit region"
                     );
+                    for reserved_pos in &reserved {
+                        assert!(
+                            !template_rect_cells(top_left).any(|p| p == *reserved_pos),
+                            "seed {seed}: template rect {top_left:?} collides with reserved tile {reserved_pos:?}"
+                        );
+                    }
                 }
             }
         }
