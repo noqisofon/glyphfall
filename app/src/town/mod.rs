@@ -31,7 +31,7 @@ pub struct TownStateRes {
 }
 
 impl TownStateRes {
-    pub fn new(images: &mut Assets<Image>) -> Self {
+    pub fn new(images: &mut Assets<Image>, party_members: &[glyphfall_core::party::PartyMember]) -> Self {
         let state = TownState::new();
 
         let mut buffer = vec![0u8; TEXTURE_WIDTH * TEXTURE_HEIGHT * 4];
@@ -40,6 +40,7 @@ impl TownStateRes {
             &state.fov,
             state.player_pos,
             &state.followers,
+            party_members,
             &mut buffer,
         );
 
@@ -64,7 +65,11 @@ impl TownStateRes {
         }
     }
 
-    pub fn update_texture(&mut self, images: &mut Assets<Image>) {
+    pub fn update_texture(
+        &mut self,
+        party_members: &[glyphfall_core::party::PartyMember],
+        images: &mut Assets<Image>,
+    ) {
         if !self.state.dirty {
             return;
         }
@@ -74,6 +79,7 @@ impl TownStateRes {
                 &self.state.fov,
                 self.state.player_pos,
                 &self.state.followers,
+                party_members,
                 &mut image.data,
             );
         }

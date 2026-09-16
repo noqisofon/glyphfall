@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use crate::{
     battle::{BattlePhase, BattleState, BattleStateRes, Monster},
-    party::{MentalState, PartyState, PartyStateRes, PlayerInventory, Personality},
+    party::{MentalState, PartyState, PartyStateRes, PlayerInventory, Personality, CURRENCY_UNIT},
     town::{DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes},
     ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
     TravelState, SHOP_ITEMS,
@@ -60,9 +60,10 @@ pub fn format_status_header(
         match mode {
             AppMode::Town => {
                 header.push_str(&format!(
-                    "  [{}] 所持金: {}G | 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫)\n",
+                    "  [{}] 所持金: {}{} | 松明: {} | 仲間列: 主人公(青) 戦士(赤) 遊び人(黄) 魔法使い(紫)\n",
                     town.current_area.name(),
                     inv.gold,
+                    CURRENCY_UNIT,
                     torch_str
                 ));
             }
@@ -72,8 +73,8 @@ pub fn format_status_header(
                 match learn_stage {
                     DialogueLearnStage::Talking => {
                         header.push_str(&format!(
-                            "  [会話中: {}] 所持金: {}G | [W/S]で話題選択 | [1]たずねる | [2]おぼえる | [3]はなれる\n",
-                            partner_name, inv.gold
+                            "  [会話中: {}] 所持金: {}{} | [W/S]で話題選択 | [1]たずねる | [2]おぼえる | [3]はなれる\n",
+                            partner_name, inv.gold, CURRENCY_UNIT
                         ));
                     }
                     DialogueLearnStage::ChoosingLearnTarget { .. } => {
@@ -90,20 +91,20 @@ pub fn format_status_header(
                     CommandMenuStage::ChoosingDirection(_) => "方向キーで対象を選択してください",
                 };
                 header.push_str(&format!(
-                    "  [コマンド選択中] 所持金: {}G | {}\n",
-                    inv.gold, hint
+                    "  [コマンド選択中] 所持金: {}{} | {}\n",
+                    inv.gold, CURRENCY_UNIT, hint
                 ));
             }
             AppMode::Shop => {
                 header.push_str(&format!(
-                    "  [道具屋・取引中: 道具屋の店主] 所持金: {}G | [W/S]で商品選択 | [1]購入 | [3]店を出る\n",
-                    inv.gold
+                    "  [道具屋・取引中: 道具屋の店主] 所持金: {}{} | [W/S]で商品選択 | [1]購入 | [3]店を出る\n",
+                    inv.gold, CURRENCY_UNIT
                 ));
             }
             AppMode::Inn => {
                 header.push_str(&format!(
-                    "  [宿屋・受付: 宿屋の主人] 所持金: {}G | [1]宿泊(50G)で全快 | [3]宿を出る\n",
-                    inv.gold
+                    "  [宿屋・受付: 宿屋の主人] 所持金: {}{} | [1]宿泊(50{})で全快 | [3]宿を出る\n",
+                    inv.gold, CURRENCY_UNIT, CURRENCY_UNIT
                 ));
             }
             AppMode::Battle => {
@@ -116,9 +117,10 @@ pub fn format_status_header(
             }
             AppMode::Travel => {
                 header.push_str(&format!(
-                    "  [街道・移動姿勢選択中] 行き先: {} | 所持金: {}G\n",
+                    "  [街道・移動姿勢選択中] 行き先: {} | 所持金: {}{}\n",
                     travel.destination.name(),
-                    inv.gold
+                    inv.gold,
+                    CURRENCY_UNIT
                 ));
             }
         }
@@ -207,21 +209,21 @@ pub fn format_left_window(
         AppMode::Shop => {
             let session = dialogue.as_ref();
             let selected = session.map(|s| s.selected_shop_index).unwrap_or(0);
-            let mut out = format!("【品物】(金:{}G)\n", inv.gold);
+            let mut out = format!("【品物】(金:{}{})\n", inv.gold, CURRENCY_UNIT);
             for (idx, item) in SHOP_ITEMS.iter().enumerate() {
                 let cursor = if idx == selected { "▶" } else { " " };
-                out.push_str(&format!("{}{} {:2}G\n", cursor, item.name, item.price));
+                out.push_str(&format!("{}{} {:2}{}\n", cursor, item.name, item.price, CURRENCY_UNIT));
             }
             out
         }
         AppMode::Inn => {
             format!(
-                "【宿屋・宿泊】\n一泊料金: 50G\n所持金  : {}G\n全員のHP/MP全快",
-                inv.gold
+                "【宿屋・宿泊】\n一泊料金: 50{}\n所持金  : {}{}\n全員のHP/MP全快",
+                CURRENCY_UNIT, inv.gold, CURRENCY_UNIT
             )
         }
         AppMode::Town => {
-            let mut out = format!("【手帳】金:{}G\n[覚えた話題]\n", inv.gold);
+            let mut out = format!("【手帳】金:{}{}\n[覚えた話題]\n", inv.gold, CURRENCY_UNIT);
             for topic in inv.topics.iter().take(3) {
                 out.push_str(&format!("・{}\n", topic));
             }
@@ -293,7 +295,7 @@ pub fn format_right_window(
             }
         }
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
-        AppMode::Inn => "[1]とまる(50G)\n[3]やめる\n\n(HP/MP全回復)".into(),
+        AppMode::Inn => format!("[1]とまる(50{})\n[3]やめる\n\n(HP/MP全回復)", CURRENCY_UNIT).into(),
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
         AppMode::Battle => {
             match &battle.phase {
@@ -330,9 +332,13 @@ pub fn format_monster_display(monster: &Monster) -> String {
 
 pub fn update_town_texture_system(
     mut town: ResMut<TownStateRes>,
+    party: Res<PartyStateRes>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    town.update_texture(&mut images);
+    if party.is_changed() {
+        town.state.dirty = true;
+    }
+    town.update_texture(&party.members, &mut images);
 }
 
 pub fn update_center_window_visibility_system(

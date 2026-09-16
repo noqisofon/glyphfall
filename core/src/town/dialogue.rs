@@ -1,4 +1,4 @@
-use crate::party::{PartyMember, PlayerInventory};
+use crate::party::{PartyMember, PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DialoguePartner {
@@ -69,26 +69,34 @@ impl LearnableSpan {
     }
 }
 
-/// テキスト中から`words`の各語句を検索し、見つかった範囲を`LearnableSpan`として返す。
+/// テキスト中から`words`の各語句を検索し、見つかったすべての範囲を本文出現順にソートして返す。
 /// 見つからない語句は黙って無視する（下線が付かないだけで、致命的な不整合にはしない）。
 fn spans_for(text: &str, words: &[&str]) -> Vec<LearnableSpan> {
     let chars: Vec<char> = text.chars().collect();
-    words
-        .iter()
-        .filter_map(|word| {
-            let word_chars: Vec<char> = word.chars().collect();
-            if word_chars.is_empty() || word_chars.len() > chars.len() {
-                return None;
+    let mut spans = Vec::new();
+
+    for &word in words {
+        let word_chars: Vec<char> = word.chars().collect();
+        if word_chars.is_empty() || word_chars.len() > chars.len() {
+            continue;
+        }
+        let w_len = word_chars.len();
+        for i in 0..=chars.len().saturating_sub(w_len) {
+            if chars[i..i + w_len] == word_chars[..] {
+                let span = LearnableSpan {
+                    start: i,
+                    end: i + w_len,
+                };
+                if !spans.contains(&span) {
+                    spans.push(span);
+                }
             }
-            chars
-                .windows(word_chars.len())
-                .position(|w| w == word_chars.as_slice())
-                .map(|start| LearnableSpan {
-                    start,
-                    end: start + word_chars.len(),
-                })
-        })
-        .collect()
+        }
+    }
+
+    // 本文中の出現位置順（start昇順）にソート
+    spans.sort_by_key(|s| s.start);
+    spans
 }
 
 /// 「おぼえる」コマンドの進行段階（ADR-0011の`CommandMenuStage`と同様の2段階パターン）。
@@ -115,7 +123,10 @@ impl DialogueSession {
     pub fn start(partner: DialoguePartner) -> Self {
         let (initial_text, learnable_spans) = match partner {
             DialoguePartner::Inn => (
-                "宿屋の主人「旅の方かい？\n一泊50フォリンで仲間全員の体力を全快できるよ。[1]で宿泊するかい？」".into(),
+                format!(
+                    "宿屋の主人「旅の方かい？\n一泊50{}で仲間全員の体力を全快できるよ。[1]で宿泊するかい？」",
+                    CURRENCY_NAME
+                ),
                 Vec::new(),
             ),
             DialoguePartner::Shop => (
@@ -241,7 +252,10 @@ impl DialogueSession {
             self.current_text = "宿屋の主人「まいど！ぐっすり休んでいきなよ」\n宿をとった。朝の光が差し込み、仲間全員のHPとMPが全快した！".into();
             true
         } else {
-            self.current_text = "宿屋の主人「おや、フォリンが足りないようだね。一泊50フォリンだよ」".into();
+            self.current_text = format!(
+                "宿屋の主人「おや、{}が足りないようだね。一泊50{}だよ」",
+                CURRENCY_NAME, CURRENCY_NAME
+            );
             false
         }
     }
@@ -252,14 +266,14 @@ impl DialogueSession {
         if inv.spend_gold(item.price) {
             inv.add_item(item.name);
             self.current_text = format!(
-                "道具屋「まいど！【{}】をお買い上げだ。\n大切に使いなよ！」(所持金: {}G)",
-                item.name, inv.gold
+                "道具屋「まいど！【{}】をお買い上げだ。\n大切に使いなよ！」(所持金: {}{})",
+                item.name, inv.gold, CURRENCY_UNIT
             );
             true
         } else {
             self.current_text = format!(
-                "道具屋「おいおい、フォリンが足りねえぜ！【{}】は {}G だ」(所持金: {}G)",
-                item.name, item.price, inv.gold
+                "道具屋「おいおい、{}が足りねえぜ！【{}】は {}{} だ」(所持金: {}{})",
+                CURRENCY_NAME, item.name, item.price, CURRENCY_UNIT, inv.gold, CURRENCY_UNIT
             );
             false
         }
@@ -374,6 +388,22 @@ mod tests {
 
         session.ask_topic("銀の鍵");
         assert_eq!(session.learn_stage, DialogueLearnStage::Talking);
+    }
+
+    #[test]
+    fn test_spans_for_multiple_occurrences_and_ordering() {
+        let text = "王都の銀の鍵と、地下迷宮の銀の鍵。どちらも鍵だ。";
+        // 探索語の順序はあえて本文の出現順と逆にする
+        let spans = spans_for(text, &["地下迷宮", "銀の鍵"]);
+
+        // 「銀の鍵」(0..3)、次に「地下迷宮」(7..11)、次に2個目の「銀の鍵」(12..15)
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].slice(text), "銀の鍵");
+        assert_eq!(spans[0].start, 3); // "王都の" = 3文字目から
+        assert_eq!(spans[1].slice(text), "地下迷宮");
+        assert_eq!(spans[2].slice(text), "銀の鍵");
+        assert!(spans[0].start < spans[1].start);
+        assert!(spans[1].start < spans[2].start);
     }
 
     fn learned_words(session: &DialogueSession) -> Vec<String> {

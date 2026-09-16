@@ -82,7 +82,7 @@ pub fn setup(
     battle: Res<BattleStateRes>,
 ) {
     let font = asset_server.load(FONT_PATH);
-    let town = TownStateRes::new(&mut images);
+    let town = TownStateRes::new(&mut images, &party.members);
 
     commands.spawn(Camera2d);
 

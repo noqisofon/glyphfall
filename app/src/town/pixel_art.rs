@@ -988,19 +988,45 @@ fn apply_shadow(pixels: &mut [Pixel; 256]) {
     }
 }
 
+/// パーティメンバーの職業や名前に応じたスプライトを取得する
+pub fn get_member_sprite(member: &glyphfall_core::party::PartyMember) -> [Pixel; 256] {
+    if member.is_player {
+        return get_player_pixels();
+    }
+    match member.job.as_str() {
+        "せんし" | "戦士" => get_warrior_pixels(),
+        "あそびにん" | "遊び人" => get_slacker_pixels(),
+        "まほうつかい" | "魔法使い" => get_mage_pixels(),
+        "きし" | "騎士" => get_knight_pixels(),
+        _ => match member.name.as_str() {
+            n if n.contains("ガルツ") => get_warrior_pixels(),
+            n if n.contains("ロロ") => get_slacker_pixels(),
+            n if n.contains("ミレイ") => get_mage_pixels(),
+            n if n.contains("アルヴィン") => get_knight_pixels(),
+            _ => get_player_pixels(),
+        },
+    }
+}
+
 /// マップ全体（46×13タイル）を 736×208 ピクセルバッファに描画
 pub fn render_town_to_texture(
     map: &TownMap,
     fov: &glyphfall_core::town::FovMap,
     player_pos: Position,
     followers: &FollowerHistory,
+    party_members: &[glyphfall_core::party::PartyMember],
     buffer: &mut [u8],
 ) {
-    let player_sprite = get_player_pixels();
-    let warrior_sprite = get_warrior_pixels();
-    let slacker_sprite = get_slacker_pixels();
-    let mage_sprite = get_mage_pixels();
-    let knight_sprite = get_knight_pixels();
+    let player_sprite = party_members
+        .first()
+        .map(get_member_sprite)
+        .unwrap_or_else(get_player_pixels);
+
+    let follower_sprites: Vec<[Pixel; 256]> = party_members
+        .iter()
+        .skip(1)
+        .map(get_member_sprite)
+        .collect();
 
     for ty in 0..MAP_HEIGHT_TILES as i32 {
         for tx in 0..MAP_WIDTH_TILES as i32 {
@@ -1010,24 +1036,14 @@ pub fn render_town_to_texture(
             // キャラクター描画（主人公・仲間）
             if tx == player_pos.x && ty == player_pos.y {
                 overlay_sprite(&mut tile_pixels, &player_sprite);
-            } else if let Some(p) = followers.get_follower_position(0) {
-                if tx == p.x && ty == p.y {
-                    overlay_sprite(&mut tile_pixels, &warrior_sprite);
-                }
-            }
-            if let Some(p) = followers.get_follower_position(1) {
-                if tx == p.x && ty == p.y && !(tx == player_pos.x && ty == player_pos.y) {
-                    overlay_sprite(&mut tile_pixels, &slacker_sprite);
-                }
-            }
-            if let Some(p) = followers.get_follower_position(2) {
-                if tx == p.x && ty == p.y && !(tx == player_pos.x && ty == player_pos.y) {
-                    overlay_sprite(&mut tile_pixels, &mage_sprite);
-                }
-            }
-            if let Some(p) = followers.get_follower_position(3) {
-                if tx == p.x && ty == p.y && !(tx == player_pos.x && ty == player_pos.y) {
-                    overlay_sprite(&mut tile_pixels, &knight_sprite);
+            } else {
+                for (i, sprite) in follower_sprites.iter().enumerate() {
+                    if let Some(p) = followers.get_follower_position(i) {
+                        if tx == p.x && ty == p.y {
+                            overlay_sprite(&mut tile_pixels, sprite);
+                            break;
+                        }
+                    }
                 }
             }
 

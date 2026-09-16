@@ -5,7 +5,7 @@ pub mod inventory;
 
 pub use action::{evaluate_command, ActionOutcome, PartyCommand, PlayerBattleAction};
 pub use diagnosis::{diagnose_member, PlayerSkills};
-pub use inventory::PlayerInventory;
+pub use inventory::{PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 #[allow(unused_imports)]
 pub use influence::{Influence, MentalState, PartyMember, Personality, MAX_NATURAL_INFLUENCE};
 

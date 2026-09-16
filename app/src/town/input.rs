@@ -7,7 +7,7 @@ use crate::{
 use crate::event::{
     try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes,
 };
-use crate::party::PlayerInventoryRes;
+use crate::party::{PlayerInventoryRes, CURRENCY_UNIT};
 use super::{
     CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
     MoveOutcome, TownStateRes, SHOP_ITEMS,
@@ -132,7 +132,7 @@ pub fn handle_interact_input(
                     msg_events.send(ShowMessage(format!("『{}』する方向を選んでください。", label)));
                 } else {
                     // 「どうぐ」は方向を選ばず、その場で所持品を確認する
-                    let mut msg = format!("【どうぐ】所持金: {}G\n", inv.gold);
+                    let mut msg = format!("【どうぐ】所持金: {}{}\n", inv.gold, CURRENCY_UNIT);
                     if inv.items.is_empty() {
                         msg.push_str("何も持っていない。");
                     } else {

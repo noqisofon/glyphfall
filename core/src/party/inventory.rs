@@ -1,3 +1,9 @@
+/// ゲーム内通貨の正式名称（ADR-0019: 銀貨相当）
+pub const CURRENCY_NAME: &str = "フォリン";
+
+/// ゲーム内通貨の略称・単位記号（当面「G」を維持。ADR-0019）
+pub const CURRENCY_UNIT: &str = "G";
+
 #[derive(Clone, Debug)]
 pub struct PlayerInventory {
     pub gold: i32,

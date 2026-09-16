@@ -2,9 +2,10 @@
 
 use crate::macros::newtype_resource;
 
+#[allow(unused_imports)]
 pub use glyphfall_core::party::{
     Influence, MentalState, PartyCommand, PartyMember, PartyState, Personality,
-    PlayerBattleAction, PlayerInventory, PlayerSkills,
+    PlayerBattleAction, PlayerInventory, PlayerSkills, CURRENCY_NAME, CURRENCY_UNIT,
 };
 
 newtype_resource!(ReserveRosterRes, glyphfall_core::party::ReserveRoster, default);

@@ -6,6 +6,7 @@
 use super::dialogue::DialoguePartner;
 use super::map::{TileType, TownMap};
 use super::movement::{Facing, Position};
+use crate::party::CURRENCY_NAME;
 
 /// コマンドウィンドウに並ぶコマンド。将来「ぬすむ」以外の追加も見据え、
 /// 対象になれるものの型（TargetKind）との組み合わせで判定を分岐させる。
@@ -146,7 +147,7 @@ fn resolve_examine(map: &mut TownMap, x: i32, y: i32, tile: Option<TileType>) ->
             InteractOutcome::ChestOpened {
                 gold: 120,
                 item: "特やくそう".into(),
-                message: "宝箱を調べた！\n120フォリンと「特やくそう」を手に入れた！".into(),
+                message: format!("宝箱を調べた！\n120{}と「特やくそう」を手に入れた！", CURRENCY_NAME),
             }
         }
         TileType::ChestOpen => InteractOutcome::Message("空になった宝箱だ。".into()),
