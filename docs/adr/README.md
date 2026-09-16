@@ -25,6 +25,7 @@
 | [ADR-0016](0016-cargo-workspace-core-app-split.md) | Cargoワークスペース化によるロジックコア（`glyphfall-core`）とBevy皮（`glyphfall`/`app`）の分離 | Accepted | 2026-09-15 |
 | [ADR-0017](0017-cave-procedural-dungeon-generation.md) | セルオートマトン法による洞窟型ダンジョンのプロシージャル生成 | Accepted | 2026-09-15 |
 | [ADR-0018](0018-hybrid-narrative-template-rooms.md) | 確率的な物語テンプレート部屋によるCave生成のハイブリッド化 | Accepted | 2026-09-16 |
+| [ADR-0019](0019-forin-currency-rename.md) | ゲーム内通貨名を「フォリン」に変更 | Accepted | 2026-09-16 |
 
  
 ## フォーマットについて
