@@ -17,14 +17,14 @@ pub fn handle_battle_input(
     // [B]: いつでも戦闘離脱（街へ帰還）
     if keyboard.just_pressed(KeyCode::KeyB) {
         *mode = AppMode::Town;
-        battle.reset_turn_commands();
+        battle.reset_turn_commands(party.members.len());
         msg_events.send(ShowMessage("戦闘を離脱し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。".into()));
         return;
     }
 
     // [N]: モンスター切り替え（テスト用）
     if keyboard.just_pressed(KeyCode::KeyN) {
-        battle.next_monster();
+        battle.next_monster(party.members.len());
         let mon = battle.current_monster();
         msg_events.send(ShowMessage(format!(
             "あらたな　魔物【{}】が　あらわれた！\nあなたの行動を選択してください。",
@@ -53,13 +53,29 @@ pub fn handle_battle_input(
 
                 if let Some(action) = chosen {
                     battle.player_action = Some(action);
-                    battle.phase = BattlePhase::CommandInput { member_cursor: 1 };
-                    let next_name = &party.members[1].name;
-                    msg_events.send(ShowMessage(format!(
-                        "あなた:「{}」を選択した。\n続いて、{} への指示を選択してください。",
-                        action.name(),
-                        next_name
-                    )));
+                    if party.members.len() > 1 {
+                        battle.phase = BattlePhase::CommandInput { member_cursor: 1 };
+                        let next_name = &party.members[1].name;
+                        msg_events.send(ShowMessage(format!(
+                            "あなた:「{}」を選択した。\n続いて、{} への指示を選択してください。",
+                            action.name(),
+                            next_name
+                        )));
+                    } else {
+                        // 仲間がいない（主人公1人旅）場合、全員の指示決定としてターン解決を実行
+                        battle.build_turn_resolution(&mut party.members, &player.skills, &mut rng);
+                        if let Some(first_step) = battle.turn_steps.first() {
+                            let step_msg = first_step.message.clone();
+                            if first_step.monster_damage.is_some() {
+                                battle.is_flashing = true;
+                                battle.flash_timer.reset();
+                            }
+                            msg_events.send(ShowMessage(format!(
+                                "【ターン開始！】行動開始！\n\n{}\n([Space]で次へ)",
+                                step_msg
+                            )));
+                        }
+                    }
                 }
             } else if member_cursor < party.members.len() {
                 // 仲間への指示選択
@@ -76,7 +92,7 @@ pub fn handle_battle_input(
                 };
 
                 if let Some(cmd) = chosen {
-                    battle.party_commands[member_cursor] = Some(cmd);
+                    battle.set_party_command(member_cursor, cmd);
                     let current_name = party.members[member_cursor].name.clone();
 
                     if member_cursor + 1 < party.members.len() {
@@ -122,7 +138,7 @@ pub fn handle_battle_input(
                 let current_step = &battle.turn_steps[step_cursor];
                 if current_step.monster_defeated {
                     let mon_name = battle.current_monster().name.clone();
-                    battle.next_monster();
+                    battle.next_monster(party.members.len());
                     *mode = AppMode::Town;
                     msg_events.send(ShowMessage(format!(
                         "魔物【{}】を撃破した！\n戦闘に勝利し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。",
@@ -139,7 +155,7 @@ pub fn handle_battle_input(
                 }
                 if current_step.flee_success {
                     *mode = AppMode::Town;
-                    battle.reset_turn_commands();
+                    battle.reset_turn_commands(party.members.len());
                     msg_events.send(ShowMessage("脱出に成功し、街へ逃げ帰った！".into()));
                     return;
                 }
@@ -168,7 +184,7 @@ pub fn handle_battle_input(
                     // 全ステップ再生完了
                     if battle.current_monster().is_dead() {
                         let mon_name = battle.current_monster().name.clone();
-                        battle.next_monster();
+                        battle.next_monster(party.members.len());
                         *mode = AppMode::Town;
                         msg_events.send(ShowMessage(format!(
                             "魔物【{}】を撃破した！\n戦闘に勝利し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。",
@@ -181,7 +197,7 @@ pub fn handle_battle_input(
                         ));
                     } else {
                         // 次のターンへ
-                        battle.reset_turn_commands();
+                        battle.reset_turn_commands(party.members.len());
                         msg_events.send(ShowMessage(
                             "次のターン！ あなたの行動を選択してください。".into(),
                         ));
@@ -200,7 +216,7 @@ pub fn handle_battle_input(
                     m.mp = m.max_mp;
                 }
                 *mode = AppMode::Town;
-                battle.reset_turn_commands();
+                battle.reset_turn_commands(party.members.len());
                 msg_events.send(ShowMessage(
                     "教会の神父に助け出され、宿屋で目覚めた……\n（HP/MP全回復）".into(),
                 ));

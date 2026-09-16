@@ -79,7 +79,7 @@ impl BattleState {
             is_flashing: false,
             phase: BattlePhase::CommandInput { member_cursor: 0 },
             player_action: None,
-            party_commands: vec![None, None, None, None],
+            party_commands: Vec::new(),
             turn_steps: Vec::new(),
         }
     }
@@ -92,17 +92,24 @@ impl BattleState {
         &mut self.monsters[self.current_index]
     }
 
-    pub fn reset_turn_commands(&mut self) {
+    pub fn reset_turn_commands(&mut self, member_count: usize) {
         self.phase = BattlePhase::CommandInput { member_cursor: 0 };
         self.player_action = None;
-        self.party_commands = vec![None, None, None, None];
+        self.party_commands = vec![None; member_count];
         self.turn_steps.clear();
     }
 
-    pub fn next_monster(&mut self) {
+    pub fn set_party_command(&mut self, index: usize, command: PartyCommand) {
+        if index >= self.party_commands.len() {
+            self.party_commands.resize(index + 1, None);
+        }
+        self.party_commands[index] = Some(command);
+    }
+
+    pub fn next_monster(&mut self, member_count: usize) {
         self.current_index = (self.current_index + 1) % self.monsters.len();
         self.monsters[self.current_index].hp = self.monsters[self.current_index].max_hp;
-        self.reset_turn_commands();
+        self.reset_turn_commands(member_count);
     }
 
     /// 現在のモンスターにダメージを与え、(モンスター名, 撃破されたか) を返す
@@ -594,5 +601,27 @@ mod tests {
         assert!(battle.current_monster().is_dead());
         let last_step = battle.turn_steps.last().unwrap();
         assert!(last_step.monster_defeated);
+    }
+
+    #[test]
+    fn test_battle_solo_player_resolution() {
+        // 主人公1人（仲間なし）のパーティでの戦闘解決テスト
+        let mut battle = BattleState::new(vec![Monster::new("テストスライム", 30, "")]);
+        let mut solo_party = vec![PartyMember::new_player("あなた").with_stats(20, 0)];
+        let skills = PlayerSkills::default();
+        let mut rng = StdRng::seed_from_u64(100);
+
+        battle.reset_turn_commands(solo_party.len());
+        assert_eq!(battle.party_commands.len(), 1);
+
+        battle.player_action = Some(PlayerBattleAction::Attack);
+
+        battle.build_turn_resolution(&mut solo_party, &skills, &mut rng);
+
+        // 主人公の攻撃ステップと敵の反撃ステップが存在すること
+        assert_eq!(battle.turn_steps.len(), 2);
+        assert!(battle.turn_steps[0].message.contains("石を投げつけた"));
+        assert!(battle.turn_steps[1].message.contains("反撃"));
+        assert_eq!(battle.phase, BattlePhase::TurnResolving { step_cursor: 0 });
     }
 }
