@@ -24,6 +24,7 @@
 | [ADR-0015](0015-turn-based-battle-and-module-decomposition.md) | 仲間指示型ターン制戦闘ループと「あなた」実体化・ファイル責務再編 | Accepted | 2026-09-16 |
 | [ADR-0016](0016-cargo-workspace-core-app-split.md) | Cargoワークスペース化によるロジックコア（`glyphfall-core`）とBevy皮（`glyphfall`/`app`）の分離 | Accepted | 2026-09-15 |
 | [ADR-0017](0017-cave-procedural-dungeon-generation.md) | セルオートマトン法による洞窟型ダンジョンのプロシージャル生成 | Accepted | 2026-09-15 |
+| [ADR-0018](0018-hybrid-narrative-template-rooms.md) | 確率的な物語テンプレート部屋によるCave生成のハイブリッド化 | Accepted | 2026-09-16 |
 
  
 ## フォーマットについて
