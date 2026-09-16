@@ -50,7 +50,8 @@ pub fn handle_town_input(
     }
 
     if dx != 0 || dy != 0 {
-        let outcome = town.move_player(dx, dy);
+        let mut rng = thread_rng();
+        let outcome = town.move_player(dx, dy, &mut rng);
 
         match outcome {
             MoveOutcome::Moved { message } => {
@@ -441,7 +442,7 @@ pub fn handle_travel_input(
             None => msg.push_str("道中、特に何も起こらなかった。"),
         }
 
-        town.switch_area(destination, spawn_pos);
+        town.switch_area(destination, spawn_pos, &mut rng);
 
         match triggered.map(|evt| evt.category) {
             Some(SuddenEventCategory::Bandit) | Some(SuddenEventCategory::WildAnimal) => {
