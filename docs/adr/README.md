@@ -27,6 +27,7 @@
 | [ADR-0018](0018-hybrid-narrative-template-rooms.md) | 確率的な物語テンプレート部屋によるCave生成のハイブリッド化 | Accepted | 2026-09-16 |
 | [ADR-0019](0019-forin-currency-rename.md) | ゲーム内通貨名を「フォリン」に変更 | Accepted | 2026-09-16 |
 | [ADR-0020](0020-knowledge-system-and-lua-mod-support.md) | 話題ウィンドウの語彙拡張とMOD向けLuaスクリプト対応 | Accepted | 2026-09-16 |
+| [ADR-0021](0021-dungeon-multi-floor-descent.md) | 封魔の地下迷宮の複数階層化（B1F〜B6F） | Accepted | 2026-09-16 |
 
  
 ## フォーマットについて

@@ -2,15 +2,56 @@
 pub enum AreaId {
     Town,
     DungeonB1F,
+    DungeonB2F,
+    DungeonB3F,
+    DungeonB4F,
+    DungeonB5F,
+    DungeonB6F,
     Village,
 }
+
+/// 封魔の地下迷宮の最深階（B6F）。これより深い階層は現状未実装で、
+/// `movement.rs`はB6Fの下り階段を「これ以上は潜れない」強制戦闘として扱う。
+pub const MAX_DUNGEON_DEPTH: u8 = 6;
 
 impl AreaId {
     pub fn name(&self) -> &'static str {
         match self {
             AreaId::Town => "王都アルカン・商業区",
             AreaId::DungeonB1F => "封魔の地下迷宮 B1F",
+            AreaId::DungeonB2F => "封魔の地下迷宮 B2F",
+            AreaId::DungeonB3F => "封魔の地下迷宮 B3F",
+            AreaId::DungeonB4F => "封魔の地下迷宮 B4F",
+            AreaId::DungeonB5F => "封魔の地下迷宮 B5F",
+            AreaId::DungeonB6F => "封魔の地下迷宮 B6F",
             AreaId::Village => "近郊の村・すずかけ村",
+        }
+    }
+
+    /// 地下迷宮の階層なら深さ（B1F=1 .. B6F=6）を返す。それ以外の区域は`None`。
+    pub fn dungeon_depth(&self) -> Option<u8> {
+        match self {
+            AreaId::DungeonB1F => Some(1),
+            AreaId::DungeonB2F => Some(2),
+            AreaId::DungeonB3F => Some(3),
+            AreaId::DungeonB4F => Some(4),
+            AreaId::DungeonB5F => Some(5),
+            AreaId::DungeonB6F => Some(6),
+            AreaId::Town | AreaId::Village => None,
+        }
+    }
+
+    /// 深さ（1..=`MAX_DUNGEON_DEPTH`）から対応する地下迷宮の階層を返す。
+    /// 範囲外なら`None`（B1Fより浅い・B6Fより深い階層は存在しない）。
+    pub fn from_dungeon_depth(depth: u8) -> Option<AreaId> {
+        match depth {
+            1 => Some(AreaId::DungeonB1F),
+            2 => Some(AreaId::DungeonB2F),
+            3 => Some(AreaId::DungeonB3F),
+            4 => Some(AreaId::DungeonB4F),
+            5 => Some(AreaId::DungeonB5F),
+            6 => Some(AreaId::DungeonB6F),
+            _ => None,
         }
     }
 }
@@ -276,17 +317,19 @@ impl TownMap {
         map
     }
 
-    /// 封魔の地下迷宮 B1F マップ生成（ADR-0017: セルオートマトン法による洞窟型
-    /// プロシージャル生成）。
+    /// 封魔の地下迷宮 各階マップ生成（ADR-0017: セルオートマトン法による洞窟型
+    /// プロシージャル生成、ADR-0021: 複数階層への拡張）。
     ///
-    /// 王都からの侵入口は`movement.rs`側で`Position { x: 3, y: 4 }`に固定
+    /// 階層間の移動口は`movement.rs`側で`Position { x: 3, y: 4 }`に固定
     /// されているため、その座標だけは生成結果によらず必ず床になるよう
     /// `dungeon_gen::generate`に契約座標として渡している。それ以外の内部構造
     /// （壁の形・宝箱や魔物の位置・下り階段の位置）は訪れるたびに変化する。
+    /// フロアは永続化しないため（ADR-0017）、B1F〜B6Fのどの階も同じ生成関数を
+    /// 使い回す。
     ///
     /// 高さは王都マップ（拡張後13マス）とテクスチャサイズを揃えるために合わせて
     /// あるが、この座標系自体は旧固定マップから変更していない。
-    pub fn create_dungeon_b1f<R: rand::Rng>(rng: &mut R) -> Self {
+    pub fn create_dungeon_floor<R: rand::Rng>(rng: &mut R) -> Self {
         super::dungeon_gen::generate(
             super::dungeon_gen::DungeonGenKind::Cave,
             46,
