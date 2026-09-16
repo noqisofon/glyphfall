@@ -115,7 +115,7 @@ impl DialogueSession {
     pub fn start(partner: DialoguePartner) -> Self {
         let (initial_text, learnable_spans) = match partner {
             DialoguePartner::Inn => (
-                "宿屋の主人「旅の方かい？\n一泊50ゴールドで仲間全員の体力を全快できるよ。[1]で宿泊するかい？」".into(),
+                "宿屋の主人「旅の方かい？\n一泊50フォリンで仲間全員の体力を全快できるよ。[1]で宿泊するかい？」".into(),
                 Vec::new(),
             ),
             DialoguePartner::Shop => (
@@ -241,7 +241,7 @@ impl DialogueSession {
             self.current_text = "宿屋の主人「まいど！ぐっすり休んでいきなよ」\n宿をとった。朝の光が差し込み、仲間全員のHPとMPが全快した！".into();
             true
         } else {
-            self.current_text = "宿屋の主人「おや、ゴールドが足りないようだね。一泊50ゴールドだよ」".into();
+            self.current_text = "宿屋の主人「おや、フォリンが足りないようだね。一泊50フォリンだよ」".into();
             false
         }
     }
@@ -258,7 +258,7 @@ impl DialogueSession {
             true
         } else {
             self.current_text = format!(
-                "道具屋「おいおい、ゴールドが足りねえぜ！【{}】は {}G だ」(所持金: {}G)",
+                "道具屋「おいおい、フォリンが足りねえぜ！【{}】は {}G だ」(所持金: {}G)",
                 item.name, item.price, inv.gold
             );
             false
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(members[1].hp, 25);
         assert_eq!(members[1].mp, 40);
 
-        // ゴールド不足で宿泊失敗
+        // フォリン不足で宿泊失敗
         let success2 = session.rest_at_inn(&mut inv, &mut members);
         assert!(!success2);
         assert_eq!(inv.gold, 10);
