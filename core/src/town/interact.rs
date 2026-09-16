@@ -146,7 +146,7 @@ fn resolve_examine(map: &mut TownMap, x: i32, y: i32, tile: Option<TileType>) ->
             InteractOutcome::ChestOpened {
                 gold: 120,
                 item: "特やくそう".into(),
-                message: "宝箱を調べた！\n120ゴールドと「特やくそう」を手に入れた！".into(),
+                message: "宝箱を調べた！\n120フォリンと「特やくそう」を手に入れた！".into(),
             }
         }
         TileType::ChestOpen => InteractOutcome::Message("空になった宝箱だ。".into()),
