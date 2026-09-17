@@ -97,6 +97,7 @@ cargo run -p glyphfall         # ゲームを起動
 - [ADR-0014: 入力処理のモード別分割とチェンジディテクションによるUI更新アーキテクチャ](docs/adr/0014-input-decomposition-and-reactive-ui.md)
 - [ADR-0015: 仲間指示型ターン制戦闘ループと「あなた」実体化・ファイル責務再編](docs/adr/0015-turn-based-battle-and-module-decomposition.md)
 - [ADR-0016: Cargoワークスペース化によるロジックコア（`glyphfall-core`）とBevy皮（`glyphfall`/`app`）の分離](docs/adr/0016-cargo-workspace-core-app-split.md)
+- [ADR-0022: 素性（出自）システムによるゲーム開始パターンの統一 (Proposed)](docs/adr/0022-origin-based-game-start.md)
 
 
 
