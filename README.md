@@ -105,6 +105,3 @@ cargo run -p glyphfall         # ゲームを起動
 - [ADR-0022: 素性（出自）システムによるゲーム開始パターンの統一 (Proposed)](docs/adr/0022-origin-based-game-start.md)
 - [ADR-0023: キャラクリ「素性」システムの2軸分離（属性軸 × 旅立ちの動機軸） (Proposed)](docs/adr/0023-origin-motive-two-axis-split.md)
 - [ADR-0024: 街道（旅シミュ）と地下迷宮のハイブリッドエンカウント方式の採用](docs/adr/0024-hybrid-encounter-and-fixed-monster-symbol.md)
-
-
-

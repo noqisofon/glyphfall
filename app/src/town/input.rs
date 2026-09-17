@@ -398,6 +398,7 @@ pub fn handle_inn_input(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_travel_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use crate::{
     battle::{BattlePhase, BattleState, BattleStateRes, Monster},
     party::{MentalState, PartyState, PartyStateRes, PlayerInventory, Personality, CURRENCY_UNIT},
-    town::{DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes},
+    town::{DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes, INN_COST},
     ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
     TravelState, SHOP_ITEMS,
 };
@@ -152,7 +152,7 @@ pub fn format_status_header(
             header.push_str("操作: [W/S]商品選択 | [1/Enter]かう | [3/Esc]店を出る");
         }
         AppMode::Inn => {
-            header.push_str("操作: [1/Enter]とまる(50G) | [3/Esc]やめる");
+            header.push_str(&format!("操作: [1/Enter]とまる({}{}) | [3/Esc]やめる", INN_COST, CURRENCY_UNIT));
         }
         AppMode::Battle => {
             header.push_str("操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行 | [N]敵切替 | [B]街へ帰還");
@@ -165,6 +165,7 @@ pub fn format_status_header(
     header
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn format_left_window(
     mode: AppMode,
     inv: &PlayerInventory,
@@ -295,7 +296,7 @@ pub fn format_right_window(
             }
         }
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
-        AppMode::Inn => format!("[1]とまる(50{})\n[3]やめる\n\n(HP/MP全回復)", CURRENCY_UNIT),
+        AppMode::Inn => format!("[1]とまる({}{})\n[3]やめる\n\n(HP/MP全回復)", INN_COST, CURRENCY_UNIT),
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
         AppMode::Battle => {
             match &battle.phase {
@@ -378,6 +379,7 @@ pub fn update_battle_monster_display_system(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_status_header_system(
     party: Res<PartyStateRes>,
     mode: Res<AppMode>,
@@ -410,6 +412,7 @@ pub fn update_status_header_system(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_tri_split_windows_system(
     mode: Res<AppMode>,
     inv: Res<PlayerInventoryRes>,

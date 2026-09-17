@@ -1,5 +1,8 @@
 use crate::party::{PartyMember, PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 
+/// 宿屋の一泊あたりの宿泊費用（フォリン）
+pub const INN_COST: i32 = 50;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DialoguePartner {
     Inn,
@@ -124,8 +127,8 @@ impl DialogueSession {
         let (initial_text, learnable_spans) = match partner {
             DialoguePartner::Inn => (
                 format!(
-                    "宿屋の主人「旅の方かい？\n一泊50{}で仲間全員の体力を全快できるよ。[1]で宿泊するかい？」",
-                    CURRENCY_NAME
+                    "宿屋の主人「旅の方かい？\n一泊{}{}で仲間全員の体力を全快できるよ。[1]で宿泊するかい？」",
+                    INN_COST, CURRENCY_NAME
                 ),
                 Vec::new(),
             ),
@@ -244,7 +247,7 @@ impl DialogueSession {
 
     /// 宿屋に泊まる処理
     pub fn rest_at_inn(&mut self, inv: &mut PlayerInventory, members: &mut [PartyMember]) -> bool {
-        if inv.spend_gold(50) {
+        if inv.spend_gold(INN_COST) {
             for m in members.iter_mut() {
                 m.hp = m.max_hp;
                 m.mp = m.max_mp;
@@ -253,8 +256,8 @@ impl DialogueSession {
             true
         } else {
             self.current_text = format!(
-                "宿屋の主人「おや、{}が足りないようだね。一泊50{}だよ」",
-                CURRENCY_NAME, CURRENCY_NAME
+                "宿屋の主人「おや、{}が足りないようだね。一泊{}{}だよ」",
+                CURRENCY_NAME, INN_COST, CURRENCY_NAME
             );
             false
         }
@@ -285,7 +288,7 @@ mod tests {
     use super::*;
     use crate::party::{Influence, MentalState, Personality};
 
-    fn create_dummy_member(name: &'static str, hp: i32, max_hp: i32, mp: i32, max_mp: i32) -> PartyMember {
+    fn create_dummy_member(name: &str, hp: i32, max_hp: i32, mp: i32, max_mp: i32) -> PartyMember {
         let mut member = PartyMember::new(
             name,
             "戦士",
@@ -311,8 +314,10 @@ mod tests {
     #[test]
     fn test_inn_rest() {
         let mut session = DialogueSession::start(DialoguePartner::Inn);
-        let mut inv = PlayerInventory::default();
-        inv.gold = 60;
+        let mut inv = PlayerInventory {
+            gold: 60,
+            ..Default::default()
+        };
         let mut members = vec![
             create_dummy_member("ガルツ", 10, 50, 0, 10),
             create_dummy_member("ミレイ", 5, 25, 2, 40),
@@ -321,7 +326,7 @@ mod tests {
         // 宿泊成功
         let success = session.rest_at_inn(&mut inv, &mut members);
         assert!(success);
-        assert_eq!(inv.gold, 10);
+        assert_eq!(inv.gold, 60 - INN_COST);
         assert_eq!(members[0].hp, 50);
         assert_eq!(members[0].mp, 10);
         assert_eq!(members[1].hp, 25);
@@ -330,14 +335,16 @@ mod tests {
         // フォリン不足で宿泊失敗
         let success2 = session.rest_at_inn(&mut inv, &mut members);
         assert!(!success2);
-        assert_eq!(inv.gold, 10);
+        assert_eq!(inv.gold, 60 - INN_COST);
     }
 
     #[test]
     fn test_shop_purchase() {
         let mut session = DialogueSession::start(DialoguePartner::Shop);
-        let mut inv = PlayerInventory::default();
-        inv.gold = 20;
+        let mut inv = PlayerInventory {
+            gold: 20,
+            ..Default::default()
+        };
         session.selected_shop_index = 0; // やくそう (8G)
 
         let success = session.buy_item(&mut inv);

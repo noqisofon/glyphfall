@@ -4,7 +4,7 @@
 //! 隣接・接触しただけでは何も起きない（移動側の自動判定は movement.rs から排除済み）。
 
 use super::dialogue::DialoguePartner;
-use super::map::{TileType, TownMap};
+use super::map::{AreaId, TileType, TownMap};
 use super::movement::{Facing, Position};
 use crate::party::CURRENCY_NAME;
 
@@ -43,7 +43,7 @@ impl CommandKind {
         }
     }
 
-    /// 「どうぐ」は方向を選ばず、コマンド決定と同時に実行される。
+    /// 判定に対象方向の選択を伴うかどうか
     pub fn needs_direction(&self) -> bool {
         !matches!(self, CommandKind::Item)
     }
@@ -93,7 +93,9 @@ pub enum InteractOutcome {
     },
 }
 
-const SIGN_TEXT: &str = "【王都アルカン・案内看板】\n北西: 宿屋[H]・酒場[T]  北東: 道具屋[S]\n南西: 貧民街裏路地     南東: 地下迷宮封鎖地区";
+const SIGN_TEXT_TOWN: &str = "【王都アルカン・案内看板】\n北西: 宿屋[H]・酒場[T]  北東: 道具屋[S]\n南西: 貧民街裏路地     南東: 地下迷宮封鎖地区";
+const SIGN_TEXT_VILLAGE: &str = "【すずかけ村・案内看板】\n西: のどかな農家・畑    東: 街道への出入口\n中央: 村の古井戸と広場";
+const SIGN_TEXT_DUNGEON: &str = "風化した古い警告板だ。\n『深層へ進む者よ、引き返す勇気を持て』";
 
 /// Zメニューでコマンドと方向が確定した後の判定本体。
 pub fn resolve(
@@ -101,6 +103,7 @@ pub fn resolve(
     player_pos: Position,
     facing: Facing,
     command: CommandKind,
+    area: AreaId,
 ) -> InteractOutcome {
     let (dx, dy) = facing_delta(facing);
     let target_x = player_pos.x + dx;
@@ -108,7 +111,7 @@ pub fn resolve(
     let tile = map.get(target_x, target_y);
 
     match command {
-        CommandKind::Examine => resolve_examine(map, target_x, target_y, tile),
+        CommandKind::Examine => resolve_examine(map, target_x, target_y, tile, area),
         CommandKind::Talk => resolve_talk(tile),
         CommandKind::Steal => resolve_steal(tile),
         CommandKind::Item => {
@@ -117,7 +120,13 @@ pub fn resolve(
     }
 }
 
-fn resolve_examine(map: &mut TownMap, x: i32, y: i32, tile: Option<TileType>) -> InteractOutcome {
+fn resolve_examine(
+    map: &mut TownMap,
+    x: i32,
+    y: i32,
+    tile: Option<TileType>,
+    area: AreaId,
+) -> InteractOutcome {
     let Some(tile) = tile else {
         return InteractOutcome::Message("そこには何もない。".into());
     };
@@ -133,15 +142,30 @@ fn resolve_examine(map: &mut TownMap, x: i32, y: i32, tile: Option<TileType>) ->
             InteractOutcome::Message("道具屋の店主が商品を並べ直している。".into())
         }
         TileType::NpcGuard => {
-            InteractOutcome::Message("王都衛兵が鋭い眼光でこちらを見張っている。".into())
+            let msg = match area {
+                AreaId::Village => "村の自警団員が周囲を警戒している。",
+                _ => "王都衛兵が鋭い眼光でこちらを見張っている。",
+            };
+            InteractOutcome::Message(msg.into())
         }
         TileType::NpcVillager => {
-            InteractOutcome::Message("街の女性が穏やかに微笑んでいる。".into())
+            let msg = match area {
+                AreaId::Village => "村の娘がのんびりと畑や井戸を見守っている。",
+                _ => "街の女性が穏やかに微笑んでいる。",
+            };
+            InteractOutcome::Message(msg.into())
         }
         TileType::NpcSuspicious => {
             InteractOutcome::Message("裏通りの怪しい男が油断なく辺りをうかがっている。".into())
         }
-        TileType::Sign => InteractOutcome::Message(SIGN_TEXT.into()),
+        TileType::Sign => {
+            let msg = match area {
+                AreaId::Town => SIGN_TEXT_TOWN,
+                AreaId::Village => SIGN_TEXT_VILLAGE,
+                _ => SIGN_TEXT_DUNGEON,
+            };
+            InteractOutcome::Message(msg.into())
+        }
         TileType::ChestClosed => {
             map.set(x, y, TileType::ChestOpen);
             InteractOutcome::ChestOpened {
@@ -212,6 +236,7 @@ mod tests {
             Position { x: 2, y: 2 },
             Facing::Up,
             CommandKind::Examine,
+            AreaId::Town,
         );
         assert!(matches!(outcome, InteractOutcome::Message(_)));
     }
@@ -225,6 +250,7 @@ mod tests {
             Position { x: 2, y: 2 },
             Facing::Up,
             CommandKind::Talk,
+            AreaId::Town,
         );
         assert!(matches!(
             outcome,
@@ -240,6 +266,7 @@ mod tests {
             Position { x: 2, y: 2 },
             Facing::Up,
             CommandKind::Talk,
+            AreaId::Town,
         );
         assert!(matches!(outcome, InteractOutcome::Message(_)));
     }
@@ -253,6 +280,7 @@ mod tests {
             Position { x: 2, y: 2 },
             Facing::Up,
             CommandKind::Examine,
+            AreaId::DungeonB1F,
         );
         assert!(matches!(outcome, InteractOutcome::ChestOpened { .. }));
         assert_eq!(map.get(2, 1), Some(TileType::ChestOpen));
@@ -267,8 +295,89 @@ mod tests {
             Position { x: 2, y: 2 },
             Facing::Up,
             CommandKind::Steal,
+            AreaId::Town,
         );
         assert!(matches!(outcome, InteractOutcome::Message(_)));
+    }
+
+    #[test]
+    fn test_examine_sign_varies_by_area() {
+        let mut map = TownMap::new(5, 5, TileType::Floor);
+        map.set(2, 1, TileType::Sign);
+
+        // 王都
+        let outcome_town = resolve(
+            &mut map,
+            Position { x: 2, y: 2 },
+            Facing::Up,
+            CommandKind::Examine,
+            AreaId::Town,
+        );
+        if let InteractOutcome::Message(msg) = outcome_town {
+            assert!(msg.contains("王都アルカン・案内看板"));
+        } else {
+            panic!("Expected Message outcome");
+        }
+
+        // すずかけ村
+        let outcome_village = resolve(
+            &mut map,
+            Position { x: 2, y: 2 },
+            Facing::Up,
+            CommandKind::Examine,
+            AreaId::Village,
+        );
+        if let InteractOutcome::Message(msg) = outcome_village {
+            assert!(msg.contains("すずかけ村・案内看板"));
+        } else {
+            panic!("Expected Message outcome");
+        }
+
+        // 地下迷宮
+        let outcome_dungeon = resolve(
+            &mut map,
+            Position { x: 2, y: 2 },
+            Facing::Up,
+            CommandKind::Examine,
+            AreaId::DungeonB1F,
+        );
+        if let InteractOutcome::Message(msg) = outcome_dungeon {
+            assert!(msg.contains("風化した古い警告板"));
+        } else {
+            panic!("Expected Message outcome");
+        }
+    }
+
+    #[test]
+    fn test_examine_npc_varies_by_area() {
+        let mut map = TownMap::new(5, 5, TileType::Floor);
+        map.set(2, 1, TileType::NpcVillager);
+
+        let outcome_town = resolve(
+            &mut map,
+            Position { x: 2, y: 2 },
+            Facing::Up,
+            CommandKind::Examine,
+            AreaId::Town,
+        );
+        if let InteractOutcome::Message(msg) = outcome_town {
+            assert!(msg.contains("街の女性"));
+        } else {
+            panic!("Expected Message outcome");
+        }
+
+        let outcome_village = resolve(
+            &mut map,
+            Position { x: 2, y: 2 },
+            Facing::Up,
+            CommandKind::Examine,
+            AreaId::Village,
+        );
+        if let InteractOutcome::Message(msg) = outcome_village {
+            assert!(msg.contains("村の娘"));
+        } else {
+            panic!("Expected Message outcome");
+        }
     }
 
     #[test]

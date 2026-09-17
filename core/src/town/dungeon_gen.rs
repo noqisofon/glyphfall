@@ -240,10 +240,10 @@ fn build_map<R: Rng>(
     // 上書きする。詳細はADR-0018を参照。
     let reserved: HashSet<(i32, i32)> = [entrance, stairs_up, exit].into_iter().collect();
     let mut sorted_by_dist = distances.clone();
-    // `sort_by`は安定ソートであり、`distances`自体が`bfs_distances`のコメントの通り
+    // `sort_by_key`は安定ソートであり、`distances`自体が`bfs_distances`のコメントの通り
     // 行優先の決定的な順序で並んでいるため、距離が同点の場合のタイブレークも
     // 乱数シードだけに依存する決定的な結果になる。
-    sorted_by_dist.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted_by_dist.sort_by_key(|a| std::cmp::Reverse(a.1));
 
     let template_count = choose_template_room_count(rng);
     let template_slots =
@@ -681,7 +681,7 @@ mod tests {
             let reserved: HashSet<(i32, i32)> = [entrance, stairs_up, exit].into_iter().collect();
 
             let mut sorted_by_dist = distances.clone();
-            sorted_by_dist.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted_by_dist.sort_by_key(|a| std::cmp::Reverse(a.1));
 
             let slots = find_template_slots(&sorted_by_dist, &region_set, &reserved, 2);
             if slots.len() == 2 {

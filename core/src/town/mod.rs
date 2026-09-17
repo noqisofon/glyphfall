@@ -5,7 +5,9 @@ pub mod interact;
 pub mod map;
 pub mod movement;
 
-pub use dialogue::{DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, SHOP_ITEMS};
+pub use dialogue::{
+    DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, INN_COST, SHOP_ITEMS,
+};
 pub use fov::FovMap;
 pub use interact::{CommandKind, InteractOutcome, TargetKind};
 pub use map::{AreaId, TileType, TownMap};
@@ -161,7 +163,13 @@ impl TownState {
 
     /// Zメニューで確定したコマンドを、向いている方向に対して判定する
     pub fn resolve_interact(&mut self, command: CommandKind) -> InteractOutcome {
-        let outcome = interact::resolve(&mut self.map, self.player_pos, self.player_facing, command);
+        let outcome = interact::resolve(
+            &mut self.map,
+            self.player_pos,
+            self.player_facing,
+            command,
+            self.current_area,
+        );
         if matches!(outcome, InteractOutcome::ChestOpened { .. }) {
             self.dirty = true;
         }
