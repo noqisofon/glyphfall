@@ -295,7 +295,7 @@ pub fn format_right_window(
             }
         }
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
-        AppMode::Inn => format!("[1]とまる(50{})\n[3]やめる\n\n(HP/MP全回復)", CURRENCY_UNIT).into(),
+        AppMode::Inn => format!("[1]とまる(50{})\n[3]やめる\n\n(HP/MP全回復)", CURRENCY_UNIT),
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
         AppMode::Battle => {
             match &battle.phase {

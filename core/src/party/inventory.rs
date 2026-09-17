@@ -39,6 +39,19 @@ impl PlayerInventory {
         self.items.push(item.into());
     }
 
+    pub fn has_item(&self, item: &str) -> bool {
+        self.items.iter().any(|i| i == item)
+    }
+
+    pub fn remove_item(&mut self, item: &str) -> bool {
+        if let Some(pos) = self.items.iter().position(|i| i == item) {
+            self.items.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn learn_topic(&mut self, topic: impl Into<String>) -> bool {
         let topic_str = topic.into();
         if self.has_topic(&topic_str) {
@@ -86,4 +99,19 @@ mod tests {
         // 二重記憶は false
         assert!(!inv.learn_topic("封印の祭壇"));
     }
+
+    #[test]
+    fn test_item_management() {
+        let mut inv = PlayerInventory::default();
+        assert!(inv.has_item("やくそう"));
+        assert!(!inv.has_item("どくけしそう"));
+
+        assert!(inv.remove_item("やくそう"));
+        assert!(!inv.has_item("やくそう"));
+        assert!(!inv.remove_item("やくそう")); // 二度目は存在しない
+
+        inv.add_item("どくけしそう");
+        assert!(inv.has_item("どくけしそう"));
+    }
 }
+

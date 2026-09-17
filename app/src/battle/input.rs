@@ -1,13 +1,46 @@
 use bevy::prelude::*;
 use rand::thread_rng;
-use crate::{AppMode, PartyStateRes, PlayerResourceRes, ShowMessage, TownStateRes};
+use glyphfall_core::party::{PartyMember, PlayerSkills};
+use crate::{AppMode, PartyStateRes, PlayerInventoryRes, PlayerResourceRes, ShowMessage, TownStateRes};
 use crate::party::{PartyCommand, PlayerBattleAction};
 use super::{BattlePhase, BattleStateRes};
 
+fn next_alive_member(members: &[PartyMember], start_idx: usize) -> Option<usize> {
+    (start_idx..members.len()).find(|&i| members[i].hp > 0)
+}
+
+fn start_turn_resolution(
+    battle: &mut BattleStateRes,
+    members: &mut [PartyMember],
+    skills: &PlayerSkills,
+    rng: &mut impl rand::Rng,
+    msg_events: &mut EventWriter<ShowMessage>,
+) {
+    battle.build_turn_resolution(members, skills, rng);
+    battle.apply_step_effects(0, members);
+    if let Some(first_step) = battle.turn_steps.first() {
+        let step_msg = first_step.message.clone();
+        let is_defeated = first_step.monster_defeated;
+        if is_defeated {
+            msg_events.send(ShowMessage(format!(
+                "【ターン開始！】\n\n{}\n魔物をたおした！([Space]で探索へ復帰)",
+                step_msg
+            )));
+        } else {
+            msg_events.send(ShowMessage(format!(
+                "【ターン開始！】\n\n{}\n([Space]で次へ)",
+                step_msg
+            )));
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn handle_battle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
     mut party: ResMut<PartyStateRes>,
+    mut inv: ResMut<PlayerInventoryRes>,
     player: Res<PlayerResourceRes>,
     mut battle: ResMut<BattleStateRes>,
     mut town: ResMut<TownStateRes>,
@@ -48,7 +81,14 @@ pub fn handle_battle_input(
                 } else if keyboard.just_pressed(KeyCode::Digit2) {
                     Some(PlayerBattleAction::Defend)
                 } else if keyboard.just_pressed(KeyCode::Digit3) {
-                    Some(PlayerBattleAction::UseItem)
+                    if inv.remove_item("やくそう") {
+                        Some(PlayerBattleAction::UseItem)
+                    } else {
+                        msg_events.send(ShowMessage(
+                            "やくそうを持っていません！\n別の行動を選択してください。".into(),
+                        ));
+                        None
+                    }
                 } else if keyboard.just_pressed(KeyCode::Digit4) {
                     Some(PlayerBattleAction::Diagnose)
                 } else if keyboard.just_pressed(KeyCode::Digit5) {
@@ -59,28 +99,17 @@ pub fn handle_battle_input(
 
                 if let Some(action) = chosen {
                     battle.player_action = Some(action);
-                    if party.members.len() > 1 {
-                        battle.phase = BattlePhase::CommandInput { member_cursor: 1 };
-                        let next_name = &party.members[1].name;
+                    if let Some(next_idx) = next_alive_member(&party.members, 1) {
+                        battle.phase = BattlePhase::CommandInput { member_cursor: next_idx };
+                        let next_name = &party.members[next_idx].name;
                         msg_events.send(ShowMessage(format!(
                             "あなた:「{}」を選択した。\n続いて、{} への指示を選択してください。",
                             action.name(),
                             next_name
                         )));
                     } else {
-                        // 仲間がいない（主人公1人旅）場合、全員の指示決定としてターン解決を実行
-                        battle.build_turn_resolution(&mut party.members, &player.skills, &mut rng);
-                        if let Some(first_step) = battle.turn_steps.first() {
-                            let step_msg = first_step.message.clone();
-                            if first_step.monster_damage.is_some() {
-                                battle.is_flashing = true;
-                                battle.flash_timer.reset();
-                            }
-                            msg_events.send(ShowMessage(format!(
-                                "【ターン開始！】行動開始！\n\n{}\n([Space]で次へ)",
-                                step_msg
-                            )));
-                        }
+                        // 生存している仲間がいない場合、全員の指示決定としてターン解決を実行
+                        start_turn_resolution(&mut battle, &mut party.members, &player.skills, &mut rng, &mut msg_events);
                     }
                 }
             } else if member_cursor < party.members.len() {
@@ -101,8 +130,7 @@ pub fn handle_battle_input(
                     battle.set_party_command(member_cursor, cmd);
                     let current_name = party.members[member_cursor].name.clone();
 
-                    if member_cursor + 1 < party.members.len() {
-                        let next_idx = member_cursor + 1;
+                    if let Some(next_idx) = next_alive_member(&party.members, member_cursor + 1) {
                         battle.phase = BattlePhase::CommandInput {
                             member_cursor: next_idx,
                         };
@@ -115,22 +143,11 @@ pub fn handle_battle_input(
                         )));
                     } else {
                         // 全員の指示が決定！ターン解決を実行
-                        battle.build_turn_resolution(&mut party.members, &player.skills, &mut rng);
-                        if let Some(first_step) = battle.turn_steps.first() {
-                            let step_msg = first_step.message.clone();
-                            if first_step.monster_damage.is_some() {
-                                battle.is_flashing = true;
-                                battle.flash_timer.reset();
-                            }
-                            msg_events.send(ShowMessage(format!(
-                                "【ターン開始！】全員の指示が揃った！\n\n{}\n([Space]で次へ)",
-                                step_msg
-                            )));
-                        }
+                        start_turn_resolution(&mut battle, &mut party.members, &player.skills, &mut rng, &mut msg_events);
                     }
                 } else if keyboard.just_pressed(KeyCode::Escape) {
-                    // 1つ前のメンバーに戻る
-                    let prev_idx = member_cursor - 1;
+                    // 1つ前の生存メンバーに戻る
+                    let prev_idx = (0..member_cursor).rev().find(|&i| i == 0 || party.members[i].hp > 0).unwrap_or(0);
                     battle.phase = BattlePhase::CommandInput {
                         member_cursor: prev_idx,
                     };
@@ -175,16 +192,12 @@ pub fn handle_battle_input(
 
                 let next_cursor = step_cursor + 1;
                 if next_cursor < battle.turn_steps.len() {
-                    let has_damage = battle.turn_steps[next_cursor].monster_damage.is_some();
-                    let step_msg = battle.turn_steps[next_cursor].message.clone();
-                    let is_defeated = battle.turn_steps[next_cursor].monster_defeated;
                     battle.phase = BattlePhase::TurnResolving {
                         step_cursor: next_cursor,
                     };
-                    if has_damage {
-                        battle.is_flashing = true;
-                        battle.flash_timer.reset();
-                    }
+                    battle.apply_step_effects(next_cursor, &mut party.members);
+                    let step_msg = battle.turn_steps[next_cursor].message.clone();
+                    let is_defeated = battle.turn_steps[next_cursor].monster_defeated;
                     if is_defeated {
                         msg_events.send(ShowMessage(format!(
                             "{}\n魔物をたおした！([Space]で探索へ復帰)",

@@ -127,12 +127,14 @@ impl BattleState {
     /// ターン解決ステップを生成する
     pub fn build_turn_resolution<R: Rng>(
         &mut self,
-        members: &mut [PartyMember],
+        members: &[PartyMember],
         skills: &PlayerSkills,
         rng: &mut R,
     ) {
         let mut steps = Vec::new();
         let mon_name = self.current_monster().name.clone();
+        let mut sim_mon_hp = self.current_monster().hp;
+        let mut sim_member_hps: Vec<i32> = members.iter().map(|m| m.hp).collect();
 
         // 1. あなた（主人公）の行動
         let player_action = self.player_action.unwrap_or(PlayerBattleAction::Attack);
@@ -141,11 +143,8 @@ impl BattleState {
         match player_action {
             PlayerBattleAction::Attack => {
                 let dmg = rng.gen_range(2..=5);
-                let is_dead = {
-                    let mon = self.current_monster_mut();
-                    mon.take_damage(dmg);
-                    mon.is_dead()
-                };
+                sim_mon_hp = (sim_mon_hp - dmg).max(0);
+                let is_dead = sim_mon_hp <= 0;
                 steps.push(BattleStep {
                     message: format!("あなた（一般人）は　必死に石を投げつけた！\n{}に {}の ダメージ！", mon_name, dmg),
                     monster_damage: Some(dmg),
@@ -174,35 +173,54 @@ impl BattleState {
                 });
             }
             PlayerBattleAction::UseItem => {
-                // 最もHPの割合が低い味方を回復
-                let target_idx = members
+                // 生存している味方の中から最もHPの割合が低い味方を回復
+                let living_targets: Vec<usize> = (0..members.len())
+                    .filter(|&i| sim_member_hps[i] > 0)
+                    .collect();
+
+                if let Some(&target_idx) = living_targets
                     .iter()
-                    .enumerate()
-                    .min_by_key(|(_, m)| m.hp * 100 / m.max_hp.max(1))
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                let target = &mut members[target_idx];
-                let heal_amount = 20;
-                let prev_hp = target.hp;
-                target.hp = (target.hp + heal_amount).min(target.max_hp);
-                let actual_heal = target.hp - prev_hp;
-                steps.push(BattleStep {
-                    message: format!(
-                        "あなたは　やくそうを取り出し　{}にあてた！\n{}のHPが {} 回復した！",
-                        target.name, target.name, actual_heal
-                    ),
-                    monster_damage: None,
-                    member_damage: None,
-                    member_heal: Some((target_idx, actual_heal)),
-                    monster_defeated: false,
-                    player_defeated: false,
-                    flee_success: false,
-                });
+                    .min_by_key(|&&i| sim_member_hps[i] * 100 / members[i].max_hp.max(1))
+                {
+                    let heal_amount = 20;
+                    let prev_hp = sim_member_hps[target_idx];
+                    let new_hp = (prev_hp + heal_amount).min(members[target_idx].max_hp);
+                    let actual_heal = new_hp - prev_hp;
+                    sim_member_hps[target_idx] = new_hp;
+
+                    let target_name = &members[target_idx].name;
+                    steps.push(BattleStep {
+                        message: format!(
+                            "あなたは　やくそうを取り出し　{}にあてた！\n{}のHPが {} 回復した！",
+                            target_name, target_name, actual_heal
+                        ),
+                        monster_damage: None,
+                        member_damage: None,
+                        member_heal: Some((target_idx, actual_heal)),
+                        monster_defeated: false,
+                        player_defeated: false,
+                        flee_success: false,
+                    });
+                } else {
+                    steps.push(BattleStep {
+                        message: "あなたは　やくそうを取り出したが、使う相手がいなかった！".into(),
+                        monster_damage: None,
+                        member_damage: None,
+                        member_heal: None,
+                        monster_defeated: false,
+                        player_defeated: false,
+                        flee_success: false,
+                    });
+                }
             }
             PlayerBattleAction::Diagnose => {
-                // 仲間（インデックス1..members.len()）からランダムで観察
-                let message = if members.len() > 1 {
-                    let target_idx = rng.gen_range(1..members.len());
+                // 生存している仲間（インデックス1..members.len()）からランダムで観察
+                let living_companions: Vec<usize> = (1..members.len())
+                    .filter(|&i| sim_member_hps[i] > 0)
+                    .collect();
+                let message = if !living_companions.is_empty() {
+                    let pick = rng.gen_range(0..living_companions.len());
+                    let target_idx = living_companions[pick];
                     let report = diagnose_member(skills, &members[target_idx], rng);
                     format!("あなた「{}の様子を見よう」\n{}\n{}", members[target_idx].name, report.observation_msg, report.conclusion_msg)
                 } else {
@@ -248,29 +266,26 @@ impl BattleState {
         }
 
         // 2. 仲間たちの行動
-        for i in 1..members.len() {
-            if self.current_monster().is_dead() {
+        for (i, member) in members.iter().enumerate().skip(1) {
+            if sim_mon_hp <= 0 {
                 break;
             }
-            if members[i].hp <= 0 {
+            if sim_member_hps[i] <= 0 {
                 // 戦闘不能なメンバーは行動できない
                 continue;
             }
             let cmd = self.party_commands.get(i).and_then(|c| *c).unwrap_or(PartyCommand::Attack);
-            let outcome = evaluate_command(&members[i], cmd, rng);
+            let outcome = evaluate_command(member, cmd, rng);
 
             match outcome {
                 ActionOutcome::Obeyed { action_msg } => {
                     match cmd {
                         PartyCommand::Attack => {
                             let dmg = rng.gen_range(8..=14);
-                            let is_dead = {
-                                let mon = self.current_monster_mut();
-                                mon.take_damage(dmg);
-                                mon.is_dead()
-                            };
+                            sim_mon_hp = (sim_mon_hp - dmg).max(0);
+                            let is_dead = sim_mon_hp <= 0;
                             steps.push(BattleStep {
-                                message: format!("{}に「たたかう」よう指示した！\n{}\n{}に {}の ダメージ！", members[i].name, action_msg, mon_name, dmg),
+                                message: format!("{}に「たたかう」よう指示した！\n{}\n{}に {}の ダメージ！", member.name, action_msg, mon_name, dmg),
                                 monster_damage: Some(dmg),
                                 member_damage: None,
                                 member_heal: None,
@@ -284,7 +299,7 @@ impl BattleState {
                         }
                         PartyCommand::Defend => {
                             steps.push(BattleStep {
-                                message: format!("{}に「みをまもる」よう指示した。\n{}", members[i].name, action_msg),
+                                message: format!("{}に「みをまもる」よう指示した。\n{}", member.name, action_msg),
                                 monster_damage: None,
                                 member_damage: None,
                                 member_heal: None,
@@ -295,13 +310,10 @@ impl BattleState {
                         }
                         PartyCommand::DesperateAttack => {
                             let dmg = rng.gen_range(20..=30);
-                            let is_dead = {
-                                let mon = self.current_monster_mut();
-                                mon.take_damage(dmg);
-                                mon.is_dead()
-                            };
+                            sim_mon_hp = (sim_mon_hp - dmg).max(0);
+                            let is_dead = sim_mon_hp <= 0;
                             steps.push(BattleStep {
-                                message: format!("{}に「すてみ」を命じた！\n{}\n痛恨の一撃！ {}に {}の ダメージ！", members[i].name, action_msg, mon_name, dmg),
+                                message: format!("{}に「すてみ」を命じた！\n{}\n痛恨の一撃！ {}に {}の ダメージ！", member.name, action_msg, mon_name, dmg),
                                 monster_damage: Some(dmg),
                                 member_damage: None,
                                 member_heal: None,
@@ -315,13 +327,10 @@ impl BattleState {
                         }
                         PartyCommand::CastSpell => {
                             let dmg = rng.gen_range(14..=22);
-                            let is_dead = {
-                                let mon = self.current_monster_mut();
-                                mon.take_damage(dmg);
-                                mon.is_dead()
-                            };
+                            sim_mon_hp = (sim_mon_hp - dmg).max(0);
+                            let is_dead = sim_mon_hp <= 0;
                             steps.push(BattleStep {
-                                message: format!("{}に「じゅもん」を命じた！\n{}\n火炎弾が炸裂！ {}に {}の ダメージ！", members[i].name, action_msg, mon_name, dmg),
+                                message: format!("{}に「じゅもん」を命じた！\n{}\n火炎弾が炸裂！ {}に {}の ダメージ！", member.name, action_msg, mon_name, dmg),
                                 monster_damage: Some(dmg),
                                 member_damage: None,
                                 member_heal: None,
@@ -337,15 +346,12 @@ impl BattleState {
                 }
                 ActionOutcome::Disobeyed { reason_msg, action_msg } => {
                     // ヤンデレの暴走攻撃
-                    if members[i].personality == Personality::Yandere {
+                    if member.personality == Personality::Yandere {
                         let dmg = rng.gen_range(16..=24);
-                        let is_dead = {
-                            let mon = self.current_monster_mut();
-                            mon.take_damage(dmg);
-                            mon.is_dead()
-                        };
+                        sim_mon_hp = (sim_mon_hp - dmg).max(0);
+                        let is_dead = sim_mon_hp <= 0;
                         steps.push(BattleStep {
-                            message: format!("{}に指示した！\n{}\n{}\nなんと {}に {}の 暴走ダメージ！", members[i].name, reason_msg, action_msg, mon_name, dmg),
+                            message: format!("{}に指示した！\n{}\n{}\nなんと {}に {}の 暴走ダメージ！", member.name, reason_msg, action_msg, mon_name, dmg),
                             monster_damage: Some(dmg),
                             member_damage: None,
                             member_heal: None,
@@ -358,7 +364,7 @@ impl BattleState {
                         }
                     } else {
                         steps.push(BattleStep {
-                            message: format!("{}に指示した！\n{}\n{}", members[i].name, reason_msg, action_msg),
+                            message: format!("{}に指示した！\n{}\n{}", member.name, reason_msg, action_msg),
                             monster_damage: None,
                             member_damage: None,
                             member_heal: None,
@@ -372,22 +378,31 @@ impl BattleState {
         }
 
         // 3. 敵モンスターの反撃（生きていれば）
-        if !self.current_monster().is_dead() {
+        if sim_mon_hp > 0 {
             // 生存メンバーから攻撃対象を選定
-            let living_indices: Vec<usize> = (0..members.len()).filter(|&idx| members[idx].hp > 0).collect();
+            let living_indices: Vec<usize> = (0..members.len())
+                .filter(|&idx| sim_member_hps[idx] > 0)
+                .collect();
             if !living_indices.is_empty() {
                 let target_pick = living_indices[rng.gen_range(0..living_indices.len())];
 
-                // あなたが狙われた場合、ミレイのヤンデレ庇いが発生することがある！
-                let yandere_idx = members.iter().position(|m| m.personality == Personality::Yandere && m.hp > 0);
-                if target_pick == 0 && yandere_idx.is_some() && rng.gen_bool(0.4) {
-                    let y_idx = yandere_idx.unwrap();
+                // あなたが狙われた場合、ミレイ等のヤンデレ庇いが発生することがある！
+                let yandere_cover = if target_pick == 0 && rng.gen_bool(0.4) {
+                    (1..members.len()).find(|&i| {
+                        members[i].personality == Personality::Yandere && sim_member_hps[i] > 0
+                    })
+                } else {
+                    None
+                };
+
+                if let Some(y_idx) = yandere_cover {
                     let raw_dmg = rng.gen_range(6..=12);
-                    members[y_idx].hp = (members[y_idx].hp - raw_dmg).max(0);
+                    sim_member_hps[y_idx] = (sim_member_hps[y_idx] - raw_dmg).max(0);
+                    let y_name = &members[y_idx].name;
                     steps.push(BattleStep {
                         message: format!(
-                            "{}の攻撃があなたに迫る！\n魔法使いミレイ「あなたに触るなッ！」\nミレイが前に飛び出して身代わりになった！ ミレイに {}の ダメージ！",
-                            mon_name, raw_dmg
+                            "{}の攻撃があなたに迫る！\n{}「あなたに触るなッ！」\n{}が前に飛び出して身代わりになった！ {}に {}の ダメージ！",
+                            mon_name, y_name, y_name, y_name, raw_dmg
                         ),
                         monster_damage: None,
                         member_damage: Some((y_idx, raw_dmg)),
@@ -401,8 +416,8 @@ impl BattleState {
                     if target_pick == 0 && player_defending {
                         raw_dmg = (raw_dmg / 2).max(1);
                     }
-                    members[target_pick].hp = (members[target_pick].hp - raw_dmg).max(0);
-                    let is_player_dead = target_pick == 0 && members[0].hp <= 0;
+                    sim_member_hps[target_pick] = (sim_member_hps[target_pick] - raw_dmg).max(0);
+                    let is_player_dead = target_pick == 0 && sim_member_hps[0] <= 0;
 
                     let target_name = &members[target_pick].name;
                     steps.push(BattleStep {
@@ -420,6 +435,37 @@ impl BattleState {
 
         self.turn_steps = steps;
         self.phase = BattlePhase::TurnResolving { step_cursor: 0 };
+    }
+
+    /// 指定ステップの効果（モンスター被ダメージ、味方被ダメージ、味方回復）を適用する
+    pub fn apply_step_effects(&mut self, step_idx: usize, members: &mut [PartyMember]) {
+        let (monster_dmg, member_dmg, member_heal) = match self.turn_steps.get(step_idx) {
+            Some(step) => (step.monster_damage, step.member_damage, step.member_heal),
+            None => return,
+        };
+
+        if let Some(dmg) = monster_dmg {
+            self.current_monster_mut().take_damage(dmg);
+            self.is_flashing = true;
+            self.flash_timer.reset();
+        }
+        if let Some((idx, dmg)) = member_dmg {
+            if idx < members.len() {
+                members[idx].hp = (members[idx].hp - dmg).max(0);
+            }
+        }
+        if let Some((idx, heal)) = member_heal {
+            if idx < members.len() {
+                members[idx].hp = (members[idx].hp + heal).min(members[idx].max_hp);
+            }
+        }
+    }
+
+    /// 全ステップの効果を一括適用する（主にテスト用ヘルパー）
+    pub fn execute_all_steps(&mut self, members: &mut [PartyMember]) {
+        for i in 0..self.turn_steps.len() {
+            self.apply_step_effects(i, members);
+        }
     }
 }
 
@@ -530,13 +576,17 @@ mod tests {
             Some(PartyCommand::Attack),
         ];
 
-        battle.build_turn_resolution(&mut party, &skills, &mut rng);
+        battle.build_turn_resolution(&party, &skills, &mut rng);
 
         // ステップが生成され、TurnResolvingフェーズになっていること
         assert!(!battle.turn_steps.is_empty());
         assert_eq!(battle.phase, BattlePhase::TurnResolving { step_cursor: 0 });
 
-        // 敵にダメージが入っていること
+        // ステップ適用前は敵のHPはそのまま
+        assert_eq!(battle.current_monster().hp, 100);
+
+        // 全ステップ適用後に敵にダメージが入っていること
+        battle.execute_all_steps(&mut party);
         assert!(battle.current_monster().hp < 100);
 
         // 敵が生きていれば敵の反撃ステップが含まれること
@@ -567,11 +617,14 @@ mod tests {
         battle.player_action = Some(PlayerBattleAction::Attack);
         battle.party_commands = vec![None, None, None, None];
 
-        battle.build_turn_resolution(&mut party, &skills, &mut rng);
+        battle.build_turn_resolution(&party, &skills, &mut rng);
 
         // あなたが倒されたステップが存在すること
         let has_player_defeated = battle.turn_steps.iter().any(|s| s.player_defeated);
         assert!(has_player_defeated);
+
+        // ステップ適用後にあなたのHPが0になること
+        battle.execute_all_steps(&mut party);
         assert_eq!(party[0].hp, 0);
     }
 
@@ -595,12 +648,40 @@ mod tests {
             Some(PartyCommand::Attack),
         ];
 
-        battle.build_turn_resolution(&mut party, &skills, &mut rng);
+        battle.build_turn_resolution(&party, &skills, &mut rng);
 
-        // 倒されたらそこでステップが終了し、撃破フラグが立つこと
-        assert!(battle.current_monster().is_dead());
+        // ステップの最後で撃破フラグが立つこと
         let last_step = battle.turn_steps.last().unwrap();
         assert!(last_step.monster_defeated);
+
+        // ステップ適用でHPが0になること
+        battle.execute_all_steps(&mut party);
+        assert!(battle.current_monster().is_dead());
+    }
+
+    #[test]
+    fn test_battle_use_item_does_not_revive_dead_member() {
+        let mut battle = BattleState::new(vec![Monster::new("スライム", 100, "")]);
+        let mut party = create_test_party();
+        // ガルツは死亡、ロロは負傷（HP 5 / 25）
+        party[1].hp = 0;
+        party[2].hp = 5;
+
+        let skills = PlayerSkills::default();
+        let mut rng = StdRng::seed_from_u64(1);
+
+        battle.player_action = Some(PlayerBattleAction::UseItem);
+        battle.party_commands = vec![None, None, Some(PartyCommand::Defend), Some(PartyCommand::Defend)];
+
+        battle.build_turn_resolution(&party, &skills, &mut rng);
+
+        // ステップ適用
+        battle.execute_all_steps(&mut party);
+
+        // ガルツ（死亡）は 0 のままで蘇生しない
+        assert_eq!(party[1].hp, 0);
+        // ロロ（負傷）が回復していること
+        assert!(party[2].hp > 5);
     }
 
     #[test]
@@ -616,12 +697,16 @@ mod tests {
 
         battle.player_action = Some(PlayerBattleAction::Attack);
 
-        battle.build_turn_resolution(&mut solo_party, &skills, &mut rng);
+        battle.build_turn_resolution(&solo_party, &skills, &mut rng);
 
         // 主人公の攻撃ステップと敵の反撃ステップが存在すること
         assert_eq!(battle.turn_steps.len(), 2);
         assert!(battle.turn_steps[0].message.contains("石を投げつけた"));
         assert!(battle.turn_steps[1].message.contains("反撃"));
         assert_eq!(battle.phase, BattlePhase::TurnResolving { step_cursor: 0 });
+
+        // ステップ0適用でモンスターにダメージ
+        battle.apply_step_effects(0, &mut solo_party);
+        assert!(battle.current_monster().hp < 30);
     }
 }
