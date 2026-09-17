@@ -69,7 +69,12 @@ impl TownState {
         self.current_area = new_area;
         self.map = match new_area {
             AreaId::Town => TownMap::create_arkan_capital(),
-            AreaId::DungeonB1F => TownMap::create_dungeon_b1f(rng),
+            AreaId::DungeonB1F
+            | AreaId::DungeonB2F
+            | AreaId::DungeonB3F
+            | AreaId::DungeonB4F
+            | AreaId::DungeonB5F
+            | AreaId::DungeonB6F => TownMap::create_dungeon_floor(rng),
             AreaId::Village => TownMap::create_suzukake_village(),
         };
         self.player_pos = spawn_pos;
