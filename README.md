@@ -97,6 +97,11 @@ cargo run -p glyphfall         # ゲームを起動
 - [ADR-0014: 入力処理のモード別分割とチェンジディテクションによるUI更新アーキテクチャ](docs/adr/0014-input-decomposition-and-reactive-ui.md)
 - [ADR-0015: 仲間指示型ターン制戦闘ループと「あなた」実体化・ファイル責務再編](docs/adr/0015-turn-based-battle-and-module-decomposition.md)
 - [ADR-0016: Cargoワークスペース化によるロジックコア（`glyphfall-core`）とBevy皮（`glyphfall`/`app`）の分離](docs/adr/0016-cargo-workspace-core-app-split.md)
+- [ADR-0017: セルオートマトン法による洞窟型ダンジョンのプロシージャル生成](docs/adr/0017-cave-procedural-dungeon-generation.md)
+- [ADR-0018: 確率的な物語テンプレート部屋によるCave生成のハイブリッド化](docs/adr/0018-hybrid-narrative-template-rooms.md)
+- [ADR-0019: ゲーム内通貨名を「フォリン」に変更](docs/adr/0019-forin-currency-rename.md)
+- [ADR-0020: 話題ウィンドウの語彙拡張とMOD向けLuaスクリプト対応](docs/adr/0020-knowledge-system-and-lua-mod-support.md)
+- [ADR-0021: 封魔の地下迷宮の複数階層化（B1F〜B6F）](docs/adr/0021-dungeon-multi-floor-descent.md)
 - [ADR-0022: 素性（出自）システムによるゲーム開始パターンの統一 (Proposed)](docs/adr/0022-origin-based-game-start.md)
 
 
