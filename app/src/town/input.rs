@@ -64,7 +64,7 @@ pub fn handle_town_input(
                     msg_events.send(ShowMessage(msg));
                 }
             }
-            MoveOutcome::TriggerBattle { message } => {
+            MoveOutcome::TriggerBattle { message, .. } => {
                 msg_events.send(ShowMessage(message));
                 *mode = AppMode::Battle;
                 dialogue_res.0 = None;

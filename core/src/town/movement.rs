@@ -57,7 +57,10 @@ impl FollowerHistory {
 pub enum MoveOutcome {
     Moved { message: Option<String> },
     Blocked { message: Option<String> },
-    TriggerBattle { message: String },
+    TriggerBattle {
+        message: String,
+        monster_pos: Option<Position>,
+    },
     ChangeArea {
         new_area: AreaId,
         spawn_pos: Position,
@@ -147,7 +150,8 @@ pub fn try_move_player(
                             player_pos.y = target_y;
                             followers.push(prev_pos);
                             MoveOutcome::TriggerBattle {
-                                message: "さらに深層への下り階段に足を踏み入れた！\n地下奥深くから強大な魔物の咆哮が響く……！([B]キーで戦闘突入)".into(),
+                                message: "さらに深層への下り階段に足を踏み入れた！\n地下奥深くから強大な魔物の咆哮が響く……！".into(),
+                                monster_pos: None,
                             }
                         }
                     }
@@ -220,6 +224,10 @@ pub fn try_move_player(
         TileType::MonsterSymbol => {
             MoveOutcome::TriggerBattle {
                 message: "暗闇から魔物の影が飛びかかってきた！\n不意打ちの戦闘だ！".into(),
+                monster_pos: Some(Position {
+                    x: target_x,
+                    y: target_y,
+                }),
             }
         }
         TileType::Sign => MoveOutcome::Blocked { message: None },
@@ -483,5 +491,36 @@ mod tests {
         assert!(matches!(outcome, MoveOutcome::Blocked { .. }));
         assert_eq!(player_pos, Position { x: 5, y: 5 });
         assert_eq!(map.get(5, 4), Some(TileType::ChestClosed));
+    }
+
+    #[test]
+    fn test_monster_symbol_triggers_battle_with_position() {
+        // ADR-0024: 固定魔物シンボルに接触すると戦闘に突入し、シンボルの座標が返される。
+        let mut map = TownMap::new(10, 10, TileType::DungeonFloor);
+        map.set(5, 4, TileType::MonsterSymbol);
+
+        let mut player_pos = Position { x: 5, y: 5 };
+        let mut player_facing = Facing::Up;
+        let mut followers = FollowerHistory::new(Position { x: 5, y: 5 }, 2);
+
+        let outcome = try_move_player(
+            &mut map,
+            AreaId::DungeonB1F,
+            &mut player_pos,
+            &mut player_facing,
+            &mut followers,
+            0,
+            -1,
+        );
+
+        match outcome {
+            MoveOutcome::TriggerBattle { monster_pos, .. } => {
+                assert_eq!(monster_pos, Some(Position { x: 5, y: 4 }));
+            }
+            other => panic!("expected TriggerBattle, got {other:?}"),
+        }
+        // プレイヤーはその場に留まり、不意打ち戦闘を受ける
+        assert_eq!(player_pos, Position { x: 5, y: 5 });
+        assert_eq!(player_facing, Facing::Up);
     }
 }

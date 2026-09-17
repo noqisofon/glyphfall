@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use rand::thread_rng;
-use crate::{AppMode, PartyStateRes, PlayerResourceRes, ShowMessage};
+use crate::{AppMode, PartyStateRes, PlayerResourceRes, ShowMessage, TownStateRes};
 use crate::party::{PartyCommand, PlayerBattleAction};
 use super::{BattlePhase, BattleStateRes};
 
@@ -10,15 +10,21 @@ pub fn handle_battle_input(
     mut party: ResMut<PartyStateRes>,
     player: Res<PlayerResourceRes>,
     mut battle: ResMut<BattleStateRes>,
+    mut town: ResMut<TownStateRes>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
     let mut rng = thread_rng();
 
-    // [B]: いつでも戦闘離脱（街へ帰還）
+    // [B]: いつでも戦闘離脱（街・探索へ復帰）
     if keyboard.just_pressed(KeyCode::KeyB) {
         *mode = AppMode::Town;
+        town.last_encounter_pos = None;
         battle.reset_turn_commands(party.members.len());
-        msg_events.send(ShowMessage("戦闘を離脱し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。".into()));
+        let area_name = town.current_area.name();
+        msg_events.send(ShowMessage(format!(
+            "戦闘を離脱し、{}へ戻った。\n[WASD]で歩き回れる。",
+            area_name
+        )));
         return;
     }
 
@@ -139,10 +145,12 @@ pub fn handle_battle_input(
                 if current_step.monster_defeated {
                     let mon_name = battle.current_monster().name.clone();
                     battle.next_monster(party.members.len());
+                    town.clear_defeated_monster();
                     *mode = AppMode::Town;
+                    let area_name = town.current_area.name();
                     msg_events.send(ShowMessage(format!(
-                        "魔物【{}】を撃破した！\n戦闘に勝利し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。",
-                        mon_name
+                        "魔物【{}】を撃破した！\n戦闘に勝利し、{}の探索に戻った。\n[WASD]で歩き回れる。",
+                        mon_name, area_name
                     )));
                     return;
                 }
@@ -155,8 +163,13 @@ pub fn handle_battle_input(
                 }
                 if current_step.flee_success {
                     *mode = AppMode::Town;
+                    town.last_encounter_pos = None;
                     battle.reset_turn_commands(party.members.len());
-                    msg_events.send(ShowMessage("脱出に成功し、街へ逃げ帰った！".into()));
+                    let area_name = town.current_area.name();
+                    msg_events.send(ShowMessage(format!(
+                        "脱出に成功し、{}の安全な場所へ逃げ戻った！",
+                        area_name
+                    )));
                     return;
                 }
 
@@ -174,7 +187,7 @@ pub fn handle_battle_input(
                     }
                     if is_defeated {
                         msg_events.send(ShowMessage(format!(
-                            "{}\n魔物をたおした！([Space]で街へ帰還)",
+                            "{}\n魔物をたおした！([Space]で探索へ復帰)",
                             step_msg
                         )));
                     } else {
@@ -185,10 +198,12 @@ pub fn handle_battle_input(
                     if battle.current_monster().is_dead() {
                         let mon_name = battle.current_monster().name.clone();
                         battle.next_monster(party.members.len());
+                        town.clear_defeated_monster();
                         *mode = AppMode::Town;
+                        let area_name = town.current_area.name();
                         msg_events.send(ShowMessage(format!(
-                            "魔物【{}】を撃破した！\n戦闘に勝利し、王都アルカンの街並みへ戻った。\n[WASD]で街を歩き回れる。",
-                            mon_name
+                            "魔物【{}】を撃破した！\n戦闘に勝利し、{}の探索に戻った。\n[WASD]で歩き回れる。",
+                            mon_name, area_name
                         )));
                     } else if party.members[0].hp <= 0 {
                         battle.phase = BattlePhase::Defeat;
@@ -215,10 +230,13 @@ pub fn handle_battle_input(
                     m.hp = m.max_hp;
                     m.mp = m.max_mp;
                 }
+                town.last_encounter_pos = None;
+                // 王都アルカンの宿屋前 (3, 4) に帰還
+                town.switch_area(crate::AreaId::Town, crate::Position { x: 3, y: 4 }, &mut rng);
                 *mode = AppMode::Town;
                 battle.reset_turn_commands(party.members.len());
                 msg_events.send(ShowMessage(
-                    "教会の神父に助け出され、宿屋で目覚めた……\n（HP/MP全回復）".into(),
+                    "教会の神父に助け出され、王都の宿屋で目覚めた……\n（HP/MP全回復）".into(),
                 ));
             }
         }

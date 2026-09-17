@@ -30,6 +30,7 @@
 | [ADR-0021](0021-dungeon-multi-floor-descent.md) | 封魔の地下迷宮の複数階層化（B1F〜B6F） | Accepted | 2026-09-16 |
 | [ADR-0022](0022-origin-based-game-start.md) | 素性（出自）システムによるゲーム開始パターンの統一 | Proposed | 2026-09-17 |
 | [ADR-0023](0023-origin-motive-two-axis-split.md) | キャラクリ「素性」システムの2軸分離（属性軸 × 旅立ちの動機軸） | Proposed | 2026-09-17 |
+| [ADR-0024](0024-hybrid-encounter-and-fixed-monster-symbol.md) | 街道（旅シミュ）と地下迷宮のハイブリッドエンカウント方式の採用 | Accepted | 2026-09-17 |
 
  
 ## フォーマットについて
