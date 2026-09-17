@@ -40,3 +40,6 @@
 3. **Rationale**: Circumstancesからどう判断したか。判断基準・優先順位。
 4. **Decision**: 結論（Rationaleから導出される決定）。
 
+`Consequences`（結果・影響）は必須セクションではありません。決定した時点で
+既にわかっている結果・影響がある場合にのみ、`Decision` の後に任意で追加します。
+
