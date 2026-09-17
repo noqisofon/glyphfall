@@ -7,8 +7,8 @@
 ## セットアップ
 
 1. 等幅フォント
-   - 標準で **Bizin Gothic**（`assets/fonts/BizinGothic-Regular.ttf`）を適用しています。
-   - **Mint Mono**（`assets/fonts/MintMono-Regular.ttf`）も同梱しています。
+   - 標準で **Bizin Gothic**（`app/assets/fonts/BizinGothic-Regular.ttf`）を適用しています。
+   - **Mint Mono**（`app/assets/fonts/MintMono-Regular.ttf`）も同梱しています。
    - `app/src/ui/mod.rs` 内 `FONT_PATH` で即座に切り替え可能です。
    - （その他、HackGen や BIZ UDゴシック も同梱済み）
 
