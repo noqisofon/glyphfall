@@ -29,6 +29,7 @@
 | [ADR-0020](0020-knowledge-system-and-lua-mod-support.md) | 話題ウィンドウの語彙拡張とMOD向けLuaスクリプト対応 | Accepted | 2026-09-16 |
 | [ADR-0021](0021-dungeon-multi-floor-descent.md) | 封魔の地下迷宮の複数階層化（B1F〜B6F） | Accepted | 2026-09-16 |
 | [ADR-0022](0022-origin-based-game-start.md) | 素性（出自）システムによるゲーム開始パターンの統一 | Proposed | 2026-09-17 |
+| [ADR-0023](0023-origin-motive-two-axis-split.md) | キャラクリ「素性」システムの2軸分離（属性軸 × 旅立ちの動機軸） | Proposed | 2026-09-17 |
 
  
 ## フォーマットについて
