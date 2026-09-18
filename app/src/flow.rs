@@ -1,9 +1,8 @@
 //! 最小限のゲーム開始フロー:
 //!
-//! 世界作成画面 → キャラクリ画面 → 世界プロシージャル生成待機画面 → ゲーム画面
+//! タイトル画面 → 世界作成画面 → キャラクリ画面 → 世界プロシージャル生成待機画面 → ゲーム画面
 //!
-//! 各画面は名前入力＋作成ボタンのみを持つ最小実装。「ゲーム画面」自体は
-//! `crate::ui::setup_playing_screen`（`AppScreen::Playing`突入時）が担う。
+//! 「ゲーム画面」自体は `crate::ui::setup_playing_screen`（`AppScreen::Playing`突入時）が担う。
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;
@@ -21,6 +20,7 @@ const GENERATING_MIN_SECONDS: f32 = 0.8;
 #[derive(States, Clone, Copy, Eq, PartialEq, Hash, Debug, Default)]
 pub enum AppScreen {
     #[default]
+    Title,
     WorldCreation,
     CharacterCreation,
     Generating,
@@ -44,6 +44,12 @@ struct NameEntryState {
 struct GeneratingTimer(Timer);
 
 #[derive(Component)]
+struct TitleScreenRoot;
+
+#[derive(Component)]
+struct TitleNewGameButton;
+
+#[derive(Component)]
 struct FlowScreenRoot;
 
 #[derive(Component)]
@@ -55,13 +61,21 @@ struct NameValueText;
 #[derive(Component)]
 struct CreateButton;
 
-/// 関数プラグイン。世界作成〜世界生成待機までの3画面分の状態・システムを登録する。
+/// 関数プラグイン。タイトル画面〜世界生成待機までの状態・システムを登録する。
 /// 「ゲーム画面」（`AppScreen::Playing`突入時の処理）は既存の`ui`モジュールが持つため
 /// ここでは登録しない（呼び出し側の`main.rs`で配線する）。
 pub fn screens_plugin(app: &mut App) {
     app.init_state::<AppScreen>()
         .init_resource::<NewGameConfig>()
         .init_resource::<NameEntryState>()
+        .add_systems(OnEnter(AppScreen::Title), setup_title_screen)
+        .add_systems(OnExit(AppScreen::Title), teardown_title_screen)
+        .add_systems(
+            Update,
+            (title_input_system, title_button_visual_feedback_system)
+                .chain()
+                .run_if(in_state(AppScreen::Title)),
+        )
         .add_systems(OnEnter(AppScreen::WorldCreation), setup_world_creation)
         .add_systems(OnExit(AppScreen::WorldCreation), teardown_name_entry_screen)
         .add_systems(OnEnter(AppScreen::CharacterCreation), setup_character_creation)
@@ -90,6 +104,193 @@ fn in_name_entry_screen(state: Res<State<AppScreen>>) -> bool {
         state.get(),
         AppScreen::WorldCreation | AppScreen::CharacterCreation
     )
+}
+
+fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load(FONT_PATH);
+
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            TitleScreenRoot,
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(24.0),
+                    padding: UiRect::all(Val::Px(36.0)),
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BorderColor(palette::FRAME),
+            ))
+            .with_children(|panel| {
+                // タイトルロゴ部
+                panel
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(8.0),
+                        ..default()
+                    })
+                    .with_children(|header| {
+                        header.spawn((
+                            Text::new("G L Y P H F A L L"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: CELL_PX * 2.0,
+                                ..default()
+                            },
+                            TextColor(palette::TEXT_HIGHLIGHT),
+                        ));
+                        header.spawn((
+                            Text::new("― 街と迷宮、言葉を紡ぐ旅 ―"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: CELL_PX * 0.85,
+                                ..default()
+                            },
+                            TextColor(palette::TEXT),
+                        ));
+                    });
+
+                // メニュー部
+                panel
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(12.0),
+                        min_width: Val::Px(320.0),
+                        ..default()
+                    })
+                    .with_children(|menu| {
+                        // New Game ボタン
+                        menu.spawn((
+                            Button,
+                            Node {
+                                width: Val::Percent(100.0),
+                                padding: UiRect::axes(Val::Px(20.0), Val::Px(10.0)),
+                                border: UiRect::all(Val::Px(2.0)),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BorderColor(palette::FRAME),
+                            BackgroundColor(Color::NONE),
+                            TitleNewGameButton,
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("▶ はじめる (New Game)"),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: CELL_PX * 1.05,
+                                    ..default()
+                                },
+                                TextColor(palette::TEXT_HIGHLIGHT),
+                            ));
+                        });
+
+                        // Continue 表示（非活性）
+                        menu.spawn(Node {
+                            width: Val::Percent(100.0),
+                            padding: UiRect::axes(Val::Px(20.0), Val::Px(8.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        })
+                        .with_children(|item| {
+                            item.spawn((
+                                Text::new("  つづきから (Continue - 未実装)"),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: CELL_PX * 0.85,
+                                    ..default()
+                                },
+                                TextColor(palette::FRAME),
+                            ));
+                        });
+                    });
+
+                // ガイド＆バージョン情報
+                panel
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(6.0),
+                        ..default()
+                    })
+                    .with_children(|footer| {
+                        footer.spawn((
+                            Text::new("[Enter] / [Space] キー または クリック で開始"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: CELL_PX * 0.7,
+                                ..default()
+                            },
+                            TextColor(palette::TEXT),
+                        ));
+                        footer.spawn((
+                            Text::new("v0.1.0 - Prototype"),
+                            TextFont {
+                                font,
+                                font_size: CELL_PX * 0.6,
+                                ..default()
+                            },
+                            TextColor(palette::FRAME),
+                        ));
+                    });
+            });
+        });
+}
+
+fn teardown_title_screen(mut commands: Commands, query: Query<Entity, With<TitleScreenRoot>>) {
+    for entity in &query {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn title_input_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    button_query: Query<&Interaction, (Changed<Interaction>, With<TitleNewGameButton>)>,
+    mut next_screen: ResMut<NextState<AppScreen>>,
+) {
+    let button_pressed = mouse_buttons.just_pressed(MouseButton::Left)
+        && button_query.iter().any(|i| *i == Interaction::Pressed);
+    let key_pressed = keyboard.just_pressed(KeyCode::Enter)
+        || keyboard.just_pressed(KeyCode::NumpadEnter)
+        || keyboard.just_pressed(KeyCode::Space);
+
+    if button_pressed || key_pressed {
+        next_screen.set(AppScreen::WorldCreation);
+    }
+}
+
+type TitleButtonInteractionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static mut BackgroundColor),
+    (Changed<Interaction>, With<TitleNewGameButton>),
+>;
+
+fn title_button_visual_feedback_system(mut query: TitleButtonInteractionQuery) {
+    for (interaction, mut bg) in &mut query {
+        *bg = match interaction {
+            Interaction::Pressed => BackgroundColor(Color::srgba(0.15, 0.85, 0.35, 0.35)),
+            Interaction::Hovered => BackgroundColor(Color::srgba(0.15, 0.85, 0.35, 0.15)),
+            Interaction::None => BackgroundColor(Color::NONE),
+        };
+    }
 }
 
 fn setup_world_creation(
@@ -315,7 +516,7 @@ fn name_entry_confirm_system(
             };
             next_screen.set(AppScreen::Generating);
         }
-        AppScreen::Generating | AppScreen::Playing => {}
+        AppScreen::Title | AppScreen::Generating | AppScreen::Playing => {}
     }
 }
 
@@ -417,6 +618,10 @@ mod tests {
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
             .add_systems(Update, name_entry_confirm_system);
+        app.world_mut()
+            .resource_mut::<NextState<AppScreen>>()
+            .set(AppScreen::WorldCreation);
+        app.update();
         app
     }
 
@@ -485,5 +690,86 @@ mod tests {
         // 決定されてデフォルト名がセットされる
         let config = app.world().resource::<NewGameConfig>();
         assert_eq!(config.world_name, DEFAULT_WORLD_NAME);
+    }
+
+    fn create_title_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::state::app::StatesPlugin)
+            .init_state::<AppScreen>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_systems(Update, title_input_system);
+        app
+    }
+
+    #[test]
+    fn test_title_screen_transitions_to_world_creation_on_enter() {
+        let mut app = create_title_test_app();
+        assert_eq!(
+            *app.world().resource::<State<AppScreen>>().get(),
+            AppScreen::Title
+        );
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+
+        app.update();
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<State<AppScreen>>().get(),
+            AppScreen::WorldCreation
+        );
+    }
+
+    #[test]
+    fn test_title_screen_transitions_to_world_creation_on_space() {
+        let mut app = create_title_test_app();
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Space);
+
+        app.update();
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<State<AppScreen>>().get(),
+            AppScreen::WorldCreation
+        );
+    }
+
+    #[test]
+    fn test_title_screen_transitions_on_button_click() {
+        let mut app = create_title_test_app();
+
+        app.world_mut().spawn((TitleNewGameButton, Interaction::Pressed));
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+
+        app.update();
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<State<AppScreen>>().get(),
+            AppScreen::WorldCreation
+        );
+    }
+
+    #[test]
+    fn test_title_screen_button_without_mouse_just_pressed_ignored() {
+        let mut app = create_title_test_app();
+
+        app.world_mut().spawn((TitleNewGameButton, Interaction::Pressed));
+
+        app.update();
+
+        // 状態はTitleのままであること
+        assert_eq!(
+            *app.world().resource::<State<AppScreen>>().get(),
+            AppScreen::Title
+        );
     }
 }
