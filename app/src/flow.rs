@@ -102,7 +102,7 @@ fn setup_world_creation(
         &mut commands,
         asset_server.load(FONT_PATH),
         "世界を作成する",
-        "新しく歩む世界の名前を入力してください。",
+        "新しく歩む世界の名前を入力してください（半角英数）。",
     );
 }
 
@@ -116,7 +116,7 @@ fn setup_character_creation(
         &mut commands,
         asset_server.load(FONT_PATH),
         "キャラクターを作成する",
-        "あなたの名前を入力してください。",
+        "あなたの名前を入力してください（半角英数）。",
     );
 }
 
@@ -240,8 +240,9 @@ fn name_entry_keyboard_system(
         }
         match &ev.logical_key {
             Key::Character(s) => {
-                if name_state.buffer.chars().count() < MAX_NAME_LEN {
-                    name_state.buffer.push_str(s);
+                let remaining = MAX_NAME_LEN.saturating_sub(name_state.buffer.chars().count());
+                for c in s.chars().filter(|c| !c.is_control()).take(remaining) {
+                    name_state.buffer.push(c);
                 }
             }
             Key::Space => {
@@ -266,9 +267,10 @@ fn update_name_display_system(
     }
 }
 
-fn button_visual_feedback_system(
-    mut query: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<CreateButton>)>,
-) {
+type ButtonInteractionQuery<'w, 's> =
+    Query<'w, 's, (&'static Interaction, &'static mut BackgroundColor), (Changed<Interaction>, With<CreateButton>)>;
+
+fn button_visual_feedback_system(mut query: ButtonInteractionQuery) {
     for (interaction, mut bg) in &mut query {
         *bg = match interaction {
             Interaction::Pressed => BackgroundColor(Color::srgba(0.15, 0.85, 0.35, 0.35)),
@@ -280,13 +282,15 @@ fn button_visual_feedback_system(
 
 fn name_entry_confirm_system(
     keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<CreateButton>)>,
     screen: Res<State<AppScreen>>,
     mut next_screen: ResMut<NextState<AppScreen>>,
     mut config: ResMut<NewGameConfig>,
     name_state: Res<NameEntryState>,
 ) {
-    let button_pressed = button_query.iter().any(|i| *i == Interaction::Pressed);
+    let button_pressed = mouse_buttons.just_pressed(MouseButton::Left)
+        && button_query.iter().any(|i| *i == Interaction::Pressed);
     let enter_pressed =
         keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::NumpadEnter);
     if !button_pressed && !enter_pressed {
@@ -382,5 +386,104 @@ fn tick_generating_system(
 fn teardown_generating_screen(mut commands: Commands, query: Query<Entity, With<GeneratingRoot>>) {
     for entity in &query {
         commands.entity(entity).despawn_recursive();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_character_input_sanitization_and_limit() {
+        let mut buffer = String::new();
+        let input = "Hello\r\n\tWorld! 1234567890 extra characters";
+        let remaining = MAX_NAME_LEN.saturating_sub(buffer.chars().count());
+        for c in input.chars().filter(|c| !c.is_control()).take(remaining) {
+            buffer.push(c);
+        }
+        assert_eq!(buffer.chars().count(), MAX_NAME_LEN);
+        assert!(!buffer.contains('\r'));
+        assert!(!buffer.contains('\n'));
+        assert!(!buffer.contains('\t'));
+        assert_eq!(buffer, "HelloWorld! 12345678");
+    }
+
+    fn create_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::state::app::StatesPlugin)
+            .init_state::<AppScreen>()
+            .init_resource::<NewGameConfig>()
+            .init_resource::<NameEntryState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_systems(Update, name_entry_confirm_system);
+        app
+    }
+
+    #[test]
+    fn test_name_entry_confirm_world_creation_default() {
+        let mut app = create_test_app();
+
+        // Enterキー押下で決定
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+
+        app.update();
+
+        let config = app.world().resource::<NewGameConfig>();
+        assert_eq!(config.world_name, DEFAULT_WORLD_NAME);
+    }
+
+    #[test]
+    fn test_name_entry_confirm_custom_name_trimmed() {
+        let mut app = create_test_app();
+
+        // トリム対象の文字列を設定
+        app.world_mut()
+            .resource_mut::<NameEntryState>()
+            .buffer = "  Eldoria  ".to_string();
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+
+        app.update();
+
+        let config = app.world().resource::<NewGameConfig>();
+        assert_eq!(config.world_name, "Eldoria");
+    }
+
+    #[test]
+    fn test_button_pressed_without_mouse_just_pressed_ignored() {
+        let mut app = create_test_app();
+
+        // CreateButton エンティティを Interaction::Pressed で作成するが、
+        // mouse_buttons には just_pressed を入れない（長押し押しっぱなしをシミュレート）
+        app.world_mut().spawn((CreateButton, Interaction::Pressed));
+
+        app.update();
+
+        // 決定されず、ワールド名は空（未確定）のままであること
+        let config = app.world().resource::<NewGameConfig>();
+        assert_eq!(config.world_name, "");
+    }
+
+    #[test]
+    fn test_button_pressed_with_mouse_just_pressed_confirms() {
+        let mut app = create_test_app();
+
+        // CreateButton エンティティを Interaction::Pressed で作成
+        app.world_mut().spawn((CreateButton, Interaction::Pressed));
+        // マウス左クリックの just_pressed を送信
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+
+        app.update();
+
+        // 決定されてデフォルト名がセットされる
+        let config = app.world().resource::<NewGameConfig>();
+        assert_eq!(config.world_name, DEFAULT_WORLD_NAME);
     }
 }

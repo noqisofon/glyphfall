@@ -4,6 +4,7 @@ pub mod view;
 pub use animation::*;
 pub use view::*;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::{
     battle::{BattleState, BattleStateRes},
@@ -73,49 +74,67 @@ pub struct TownMapImageNode;
 #[derive(Component)]
 pub struct BattleMonsterTextNode;
 
+#[derive(Component)]
+pub struct PlayingRoot;
+
+#[derive(SystemParam)]
+pub struct PlayingScreenParams<'w> {
+    pub party: Res<'w, PartyStateRes>,
+    pub town_mode: Res<'w, AppMode>,
+    pub inv: Res<'w, PlayerInventoryRes>,
+    pub battle: Res<'w, BattleStateRes>,
+    pub town: Res<'w, TownStateRes>,
+    pub new_game: Res<'w, NewGameConfig>,
+}
+
 /// `AppScreen::Playing`突入時に呼ばれるゲーム画面のセットアップ。
 /// 街（`TownStateRes`）は前段の生成待機画面（`flow::setup_generating_screen`）で
 /// 既に作られているため、ここでは既存のリソースを読むだけでよい。
 pub fn setup_playing_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    party: Res<PartyStateRes>,
-    town_mode: Res<AppMode>,
-    inv: Res<PlayerInventoryRes>,
-    battle: Res<BattleStateRes>,
-    town: Res<TownStateRes>,
-    new_game: Res<NewGameConfig>,
+    params: PlayingScreenParams,
 ) {
     let font = asset_server.load(FONT_PATH);
 
     commands
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            flex_direction: FlexDirection::Column,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            row_gap: Val::Px(8.0),
-            padding: UiRect::all(Val::Px(16.0)),
-            ..default()
-        })
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(8.0),
+                padding: UiRect::all(Val::Px(16.0)),
+                ..default()
+            },
+            PlayingRoot,
+        ))
         .with_children(|root| {
             // 上部：ステータス＆操作ガイドウィンドウ (4行)
-            spawn_status_window(root, font.clone(), &party, *town_mode, &town, &inv);
+            spawn_status_window(
+                root,
+                font.clone(),
+                &params.party,
+                *params.town_mode,
+                &params.town,
+                &params.inv,
+            );
 
             // 中央：ドット絵街マップ or 敵モンスターのウィンドウ (9行)
-            spawn_center_window(root, font.clone(), &town);
+            spawn_center_window(root, font.clone(), &params.town);
 
             // 下部：ADR-0002準拠 三分割ウィンドウ
             spawn_tri_split_window(
                 root,
                 font.clone(),
-                &inv,
-                &battle,
-                &party,
+                &params.inv,
+                &params.battle,
+                &params.party,
                 &format!(
                     "【{}／王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[Z]キーでコマンドを開き、話したい相手や調べたい対象の方向を選ぼう。",
-                    new_game.world_name
+                    params.new_game.world_name
                 ),
             );
         });
