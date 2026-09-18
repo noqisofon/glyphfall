@@ -7,3 +7,5 @@ edition = "2021"
 glyphfall-core = { path = "../core" }
 bevy = { version = "0.15", features = ["dynamic_linking"] }
 rand = "0.8"
+image = { version = "0.25", default-features = false, features = ["png"] }
+

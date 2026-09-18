@@ -1072,3 +1072,36 @@ pub fn render_town_to_texture(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_png_tilesets() {
+        let exterior = image::open("assets/exterior.png").unwrap().to_rgba8();
+        let dungeon = image::open("assets/dungeon.png").unwrap().to_rgba8();
+
+        println!("=== DUNGEON TILE SAMPLES ===");
+        for ty in 0..16 {
+            for tx in 0..30 {
+                let mut colors = Vec::new();
+                for py in [4, 8, 12] {
+                    for px in [4, 8, 12] {
+                        colors.push(dungeon.get_pixel(tx * 16 + px, ty * 16 + py));
+                    }
+                }
+                let avg_r: u32 = colors.iter().map(|p| p[0] as u32).sum::<u32>() / 9;
+                let avg_g: u32 = colors.iter().map(|p| p[1] as u32).sum::<u32>() / 9;
+                let avg_b: u32 = colors.iter().map(|p| p[2] as u32).sum::<u32>() / 9;
+                let avg_a: u32 = colors.iter().map(|p| p[3] as u32).sum::<u32>() / 9;
+                if avg_a > 100 {
+                    print!("[{:02},{:02}:{:02x}{:02x}{:02x}] ", tx, ty, avg_r, avg_g, avg_b);
+                } else {
+                    print!("[{:02},{:02}:  none  ] ", tx, ty);
+                }
+            }
+            println!();
+        }
+    }
+}
