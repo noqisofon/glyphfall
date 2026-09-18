@@ -189,7 +189,7 @@ fn get_tile_pixels(tile: TileType, area: AreaId) -> [Pixel; 256] {
             if is_dungeon {
                 atlas.dungeon.get_tile(12, 0)
             } else {
-                atlas.exterior.get_tile(6, 11) // 重厚な城壁
+                atlas.exterior.get_tile(21, 2) // サンプル画像準拠の青紫城壁石レンガ
             }
         }
         TileType::Water => atlas.exterior.get_tile(1, 0),
@@ -496,3 +496,4 @@ mod tests {
         assert!(buffer.iter().any(|&b| b > 0));
     }
 }
+
