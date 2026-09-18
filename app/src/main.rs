@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 mod battle;
 mod event;
+mod flow;
 mod macros;
 mod party;
 mod town;
@@ -9,6 +10,7 @@ mod ui;
 
 use battle::{create_default_monsters, BattleState, BattleStateRes};
 use event::{SuddenEventHistoryRes, SuddenEventRegistryRes};
+use flow::AppScreen;
 pub use party::{
     Influence, MentalState, PartyMember, PartyStateRes, Personality, PlayerInventoryRes,
     PlayerResourceRes, PlayerSkills, ReserveRosterRes,
@@ -108,6 +110,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(palette::BG))
+        .add_plugins(flow::screens_plugin)
         .insert_resource(AppMode::Town)
         .insert_resource(PlayerInventoryRes::default())
         .insert_resource(ActiveDialogue::default())
@@ -166,7 +169,8 @@ fn main() {
             ],
         }))
         .add_event::<ShowMessage>()
-        .add_systems(Startup, ui::setup)
+        .add_systems(Startup, spawn_camera)
+        .add_systems(OnEnter(AppScreen::Playing), ui::setup_playing_screen)
         .add_systems(
             Update,
             (
@@ -196,9 +200,14 @@ fn main() {
                     ui::update_center_window_visibility_system,
                 ),
             )
-                .chain(),
+                .chain()
+                .run_if(in_state(AppScreen::Playing)),
         )
         .run();
+}
+
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }
 
 fn handle_common_input(
