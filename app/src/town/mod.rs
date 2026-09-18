@@ -41,6 +41,7 @@ impl TownStateRes {
             state.player_pos,
             &state.followers,
             party_members,
+            state.current_area,
             &mut buffer,
         );
 
@@ -80,6 +81,7 @@ impl TownStateRes {
                 self.state.player_pos,
                 &self.state.followers,
                 party_members,
+                self.state.current_area,
                 &mut image.data,
             );
         }
