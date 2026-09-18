@@ -7,6 +7,7 @@ pub use view::*;
 use bevy::prelude::*;
 use crate::{
     battle::{BattleState, BattleStateRes},
+    flow::NewGameConfig,
     party::{PartyState, PartyStateRes, PlayerInventory, PlayerInventoryRes},
     town::{TownState, TownStateRes},
     AppMode, CommandMenuState, TravelState,
@@ -72,19 +73,20 @@ pub struct TownMapImageNode;
 #[derive(Component)]
 pub struct BattleMonsterTextNode;
 
-pub fn setup(
+/// `AppScreen::Playing`突入時に呼ばれるゲーム画面のセットアップ。
+/// 街（`TownStateRes`）は前段の生成待機画面（`flow::setup_generating_screen`）で
+/// 既に作られているため、ここでは既存のリソースを読むだけでよい。
+pub fn setup_playing_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
     party: Res<PartyStateRes>,
     town_mode: Res<AppMode>,
     inv: Res<PlayerInventoryRes>,
     battle: Res<BattleStateRes>,
+    town: Res<TownStateRes>,
+    new_game: Res<NewGameConfig>,
 ) {
     let font = asset_server.load(FONT_PATH);
-    let town = TownStateRes::new(&mut images, &party.members);
-
-    commands.spawn(Camera2d);
 
     commands
         .spawn(Node {
@@ -111,11 +113,12 @@ pub fn setup(
                 &inv,
                 &battle,
                 &party,
-                "【王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[Z]キーでコマンドを開き、話したい相手や調べたい対象の方向を選ぼう。",
+                &format!(
+                    "【{}／王都アルカン 商業区】\n夜の冷たい風が石畳を抜けていく。[Z]キーでコマンドを開き、話したい相手や調べたい対象の方向を選ぼう。",
+                    new_game.world_name
+                ),
             );
         });
-
-    commands.insert_resource(town);
 }
 
 pub fn spawn_status_window(
