@@ -115,8 +115,14 @@ pub fn screens_plugin(app: &mut App) {
         )
         .add_systems(OnEnter(AppScreen::WorldCreation), setup_world_creation)
         .add_systems(OnExit(AppScreen::WorldCreation), teardown_name_entry_screen)
-        .add_systems(OnEnter(AppScreen::CharacterCreation), setup_character_creation)
-        .add_systems(OnExit(AppScreen::CharacterCreation), teardown_name_entry_screen)
+        .add_systems(
+            OnEnter(AppScreen::CharacterCreation),
+            setup_character_creation,
+        )
+        .add_systems(
+            OnExit(AppScreen::CharacterCreation),
+            teardown_name_entry_screen,
+        )
         .add_systems(
             Update,
             (
@@ -129,11 +135,23 @@ pub fn screens_plugin(app: &mut App) {
                 .run_if(in_name_entry_screen),
         )
         .add_systems(OnEnter(AppScreen::OriginSelection), setup_origin_selection)
-        .add_systems(OnExit(AppScreen::OriginSelection), teardown_selection_screen)
+        .add_systems(
+            OnExit(AppScreen::OriginSelection),
+            teardown_selection_screen,
+        )
         .add_systems(OnEnter(AppScreen::MotiveSelection), setup_motive_selection)
-        .add_systems(OnExit(AppScreen::MotiveSelection), teardown_selection_screen)
-        .add_systems(OnEnter(AppScreen::PartnerSelection), setup_partner_selection)
-        .add_systems(OnExit(AppScreen::PartnerSelection), teardown_selection_screen)
+        .add_systems(
+            OnExit(AppScreen::MotiveSelection),
+            teardown_selection_screen,
+        )
+        .add_systems(
+            OnEnter(AppScreen::PartnerSelection),
+            setup_partner_selection,
+        )
+        .add_systems(
+            OnExit(AppScreen::PartnerSelection),
+            teardown_selection_screen,
+        )
         .add_systems(
             Update,
             (
@@ -375,7 +393,12 @@ fn setup_character_creation(
     );
 }
 
-fn spawn_name_entry_screen(commands: &mut Commands, font: Handle<Font>, heading: &str, prompt: &str) {
+fn spawn_name_entry_screen(
+    commands: &mut Commands,
+    font: Handle<Font>,
+    heading: &str,
+    prompt: &str,
+) {
     commands
         .spawn((
             Node {
@@ -522,8 +545,12 @@ fn update_name_display_system(
     }
 }
 
-type ButtonInteractionQuery<'w, 's> =
-    Query<'w, 's, (&'static Interaction, &'static mut BackgroundColor), (Changed<Interaction>, With<CreateButton>)>;
+type ButtonInteractionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static mut BackgroundColor),
+    (Changed<Interaction>, With<CreateButton>),
+>;
 
 fn button_visual_feedback_system(mut query: ButtonInteractionQuery) {
     for (interaction, mut bg) in &mut query {
@@ -1017,7 +1044,9 @@ fn spawn_selection_screen_layout(
                     })
                     .with_children(|footer| {
                         footer.spawn((
-                            Text::new("操作: [↑/↓] または [W/S] で選択 | [1-5] 直接選択 | [Enter] で決定"),
+                            Text::new(
+                                "操作: [↑/↓] または [W/S] で選択 | [1-5] 直接選択 | [Enter] で決定",
+                            ),
                             TextFont {
                                 font: font.clone(),
                                 font_size: CELL_PX * 0.7,
@@ -1114,12 +1143,8 @@ fn selection_input_system(
     }
 }
 
-type SelectionItemInteractionQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Interaction, &'static SelectionItemButton),
-    Changed<Interaction>,
->;
+type SelectionItemInteractionQuery<'w, 's> =
+    Query<'w, 's, (&'static Interaction, &'static SelectionItemButton), Changed<Interaction>>;
 
 type SelectionConfirmInteractionQuery<'w, 's> =
     Query<'w, 's, &'static Interaction, (Changed<Interaction>, With<SelectionConfirmButton>)>;
@@ -1170,9 +1195,33 @@ fn update_selection_visual_system(
     screen: Res<State<AppScreen>>,
     mut text_query: Query<(&SelectionItemText, &mut Text, &mut TextColor)>,
     mut btn_query: Query<(&SelectionItemButton, &mut BackgroundColor, &mut BorderColor)>,
-    mut title_query: Query<&mut Text, (With<SelectionDetailTitle>, Without<SelectionItemText>, Without<SelectionDetailDesc>, Without<SelectionDetailBonus>)>,
-    mut desc_query: Query<&mut Text, (With<SelectionDetailDesc>, Without<SelectionItemText>, Without<SelectionDetailTitle>, Without<SelectionDetailBonus>)>,
-    mut bonus_query: Query<&mut Text, (With<SelectionDetailBonus>, Without<SelectionItemText>, Without<SelectionDetailTitle>, Without<SelectionDetailDesc>)>,
+    mut title_query: Query<
+        &mut Text,
+        (
+            With<SelectionDetailTitle>,
+            Without<SelectionItemText>,
+            Without<SelectionDetailDesc>,
+            Without<SelectionDetailBonus>,
+        ),
+    >,
+    mut desc_query: Query<
+        &mut Text,
+        (
+            With<SelectionDetailDesc>,
+            Without<SelectionItemText>,
+            Without<SelectionDetailTitle>,
+            Without<SelectionDetailBonus>,
+        ),
+    >,
+    mut bonus_query: Query<
+        &mut Text,
+        (
+            With<SelectionDetailBonus>,
+            Without<SelectionItemText>,
+            Without<SelectionDetailTitle>,
+            Without<SelectionDetailDesc>,
+        ),
+    >,
 ) {
     if !selection_state.is_changed() && !screen.is_changed() {
         return;
@@ -1183,7 +1232,11 @@ fn update_selection_visual_system(
     for (item_text, mut text, mut color) in &mut text_query {
         let is_selected = item_text.0 == selection_state.cursor;
         let prefix = if is_selected { "▶ " } else { "   " };
-        let label = data.items.get(item_text.0).map(|s| s.as_str()).unwrap_or("");
+        let label = data
+            .items
+            .get(item_text.0)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         *text = Text::new(format!("{}{}. {}", prefix, item_text.0 + 1, label));
         *color = TextColor(if is_selected {
             palette::TEXT_HIGHLIGHT
@@ -1289,9 +1342,7 @@ mod tests {
         let mut app = create_test_app();
 
         // トリム対象の文字列を設定
-        app.world_mut()
-            .resource_mut::<NameEntryState>()
-            .buffer = "  Eldoria  ".to_string();
+        app.world_mut().resource_mut::<NameEntryState>().buffer = "  Eldoria  ".to_string();
 
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
@@ -1388,7 +1439,8 @@ mod tests {
     fn test_title_screen_transitions_on_button_click() {
         let mut app = create_title_test_app();
 
-        app.world_mut().spawn((TitleNewGameButton, Interaction::Pressed));
+        app.world_mut()
+            .spawn((TitleNewGameButton, Interaction::Pressed));
         app.world_mut()
             .resource_mut::<ButtonInput<MouseButton>>()
             .press(MouseButton::Left);
@@ -1406,7 +1458,8 @@ mod tests {
     fn test_title_screen_button_without_mouse_just_pressed_ignored() {
         let mut app = create_title_test_app();
 
-        app.world_mut().spawn((TitleNewGameButton, Interaction::Pressed));
+        app.world_mut()
+            .spawn((TitleNewGameButton, Interaction::Pressed));
 
         app.update();
 
@@ -1446,10 +1499,7 @@ mod tests {
             .init_resource::<SelectionState>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
-            .add_systems(
-                Update,
-                selection_input_system.run_if(in_selection_screen),
-            );
+            .add_systems(Update, selection_input_system.run_if(in_selection_screen));
         app.world_mut()
             .resource_mut::<NextState<AppScreen>>()
             .set(initial_screen);
@@ -1473,7 +1523,9 @@ mod tests {
         assert_eq!(app.world().resource::<SelectionState>().cursor, 1);
 
         // 前の入力をクリアして Enter で決定
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::Enter);
@@ -1509,7 +1561,12 @@ mod tests {
             app.world().resource::<NewGameConfig>().build.motive,
             MotiveKind::AspiringAdventurer
         );
-        assert!(app.world().resource::<NewGameConfig>().build.partner.is_none());
+        assert!(app
+            .world()
+            .resource::<NewGameConfig>()
+            .build
+            .partner
+            .is_none());
     }
 
     #[test]
@@ -1524,7 +1581,9 @@ mod tests {
         assert_eq!(app.world().resource::<SelectionState>().cursor, 1);
 
         // 前の入力をクリアして Enter で決定
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::Enter);
@@ -1553,7 +1612,9 @@ mod tests {
         assert_eq!(app.world().resource::<SelectionState>().cursor, 1);
 
         // 前の入力をクリアして Enter で決定
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::Enter);

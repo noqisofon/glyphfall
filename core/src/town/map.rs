@@ -252,7 +252,7 @@ impl TownMap {
         }
         map.set(35, 11, TileType::DoorClosed); // 地下区画への門扉
         map.set(41, 11, TileType::StairsDown); // 地下迷宮への階段
-        map.set(37, 11, TileType::NpcGuard);   // 衛兵
+        map.set(37, 11, TileType::NpcGuard); // 衛兵
 
         // 南西エリア：貧民街裏路地
         for x in 1..=14 {

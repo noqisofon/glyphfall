@@ -31,7 +31,10 @@ pub struct TownStateRes {
 }
 
 impl TownStateRes {
-    pub fn new(images: &mut Assets<Image>, party_members: &[glyphfall_core::party::PartyMember]) -> Self {
+    pub fn new(
+        images: &mut Assets<Image>,
+        party_members: &[glyphfall_core::party::PartyMember],
+    ) -> Self {
         let state = TownState::new();
 
         let mut buffer = vec![0u8; TEXTURE_WIDTH * TEXTURE_HEIGHT * 4];

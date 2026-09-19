@@ -4,8 +4,6 @@ pub mod view;
 pub use animation::*;
 pub use view::*;
 
-use bevy::ecs::system::SystemParam;
-use bevy::prelude::*;
 use crate::{
     battle::{BattleState, BattleStateRes},
     flow::NewGameConfig,
@@ -13,6 +11,8 @@ use crate::{
     town::{TownState, TownStateRes},
     AppMode, CommandMenuState, TravelState,
 };
+use bevy::ecs::system::SystemParam;
+use bevy::prelude::*;
 use view::{format_left_window, format_right_window, format_status_header};
 
 // ─────────────────────────────────────────────

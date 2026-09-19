@@ -60,7 +60,12 @@ pub fn generate<R: Rng>(
     }
 }
 
-fn generate_cave<R: Rng>(width: usize, height: usize, entrance: (i32, i32), rng: &mut R) -> TownMap {
+fn generate_cave<R: Rng>(
+    width: usize,
+    height: usize,
+    entrance: (i32, i32),
+    rng: &mut R,
+) -> TownMap {
     for _ in 0..CAVE_MAX_ATTEMPTS {
         let mut floor = random_fill(width, height, rng);
 
@@ -124,9 +129,14 @@ fn smooth_step(floor: &[bool], width: usize, height: usize) -> Vec<bool> {
 
 fn neighbors8(x: i32, y: i32) -> [(i32, i32); 8] {
     [
-        (x - 1, y - 1), (x, y - 1), (x + 1, y - 1),
-        (x - 1, y),                 (x + 1, y),
-        (x - 1, y + 1), (x, y + 1), (x + 1, y + 1),
+        (x - 1, y - 1),
+        (x, y - 1),
+        (x + 1, y - 1),
+        (x - 1, y),
+        (x + 1, y),
+        (x - 1, y + 1),
+        (x, y + 1),
+        (x + 1, y + 1),
     ]
 }
 
@@ -200,7 +210,10 @@ fn bfs_distances(
     }
 
     // 行優先の固定順で返すことで、最遠点選択時のタイブレークも決定的になる。
-    region.iter().map(|&p| (p, dist[idx(width, p.0, p.1)])).collect()
+    region
+        .iter()
+        .map(|&p| (p, dist[idx(width, p.0, p.1)]))
+        .collect()
 }
 
 fn build_map<R: Rng>(
@@ -611,7 +624,10 @@ mod tests {
             .iter()
             .zip(map_b.tiles.iter())
             .any(|(a, b)| a != b);
-        assert!(differs, "different seeds should not produce an identical cave");
+        assert!(
+            differs,
+            "different seeds should not produce an identical cave"
+        );
     }
 
     /// ADR-0018: テンプレート部屋の個数抽選が想定の重み

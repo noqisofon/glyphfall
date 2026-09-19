@@ -55,8 +55,12 @@ impl FollowerHistory {
 
 #[derive(Debug)]
 pub enum MoveOutcome {
-    Moved { message: Option<String> },
-    Blocked { message: Option<String> },
+    Moved {
+        message: Option<String>,
+    },
+    Blocked {
+        message: Option<String>,
+    },
     TriggerBattle {
         message: String,
         monster_pos: Option<Position>,
@@ -160,36 +164,32 @@ pub fn try_move_player(
                 AreaId::Village => MoveOutcome::Blocked { message: None },
             }
         }
-        TileType::StairsUp => {
-            match current_area {
-                AreaId::DungeonB1F => {
-                    MoveOutcome::ChangeArea {
-                        new_area: AreaId::Town,
-                        spawn_pos: Position { x: 40, y: 11 },
-                        message: "階段を駆け上がり、夜風が吹き抜ける王都アルカンへ無事に生還した！".into(),
-                    }
+        TileType::StairsUp => match current_area {
+            AreaId::DungeonB1F => MoveOutcome::ChangeArea {
+                new_area: AreaId::Town,
+                spawn_pos: Position { x: 40, y: 11 },
+                message: "階段を駆け上がり、夜風が吹き抜ける王都アルカンへ無事に生還した！".into(),
+            },
+            AreaId::DungeonB2F
+            | AreaId::DungeonB3F
+            | AreaId::DungeonB4F
+            | AreaId::DungeonB5F
+            | AreaId::DungeonB6F => {
+                let depth = current_area
+                    .dungeon_depth()
+                    .expect("current_area is one of the dungeon floor variants");
+                let prev_area = AreaId::from_dungeon_depth(depth - 1)
+                    .expect("depth - 1 stays within 1..=MAX_DUNGEON_DEPTH for B2F..=B6F");
+                MoveOutcome::ChangeArea {
+                    new_area: prev_area,
+                    spawn_pos: Position { x: 3, y: 4 },
+                    message: format!("階段を上り、一つ浅い【{}】へ戻った。", prev_area.name()),
                 }
-                AreaId::DungeonB2F
-                | AreaId::DungeonB3F
-                | AreaId::DungeonB4F
-                | AreaId::DungeonB5F
-                | AreaId::DungeonB6F => {
-                    let depth = current_area
-                        .dungeon_depth()
-                        .expect("current_area is one of the dungeon floor variants");
-                    let prev_area = AreaId::from_dungeon_depth(depth - 1)
-                        .expect("depth - 1 stays within 1..=MAX_DUNGEON_DEPTH for B2F..=B6F");
-                    MoveOutcome::ChangeArea {
-                        new_area: prev_area,
-                        spawn_pos: Position { x: 3, y: 4 },
-                        message: format!("階段を上り、一つ浅い【{}】へ戻った。", prev_area.name()),
-                    }
-                }
-                AreaId::Town | AreaId::Village => MoveOutcome::Blocked {
-                    message: Some("見上げるような高い塔の扉は固く閉ざされている。".into()),
-                },
             }
-        }
+            AreaId::Town | AreaId::Village => MoveOutcome::Blocked {
+                message: Some("見上げるような高い塔の扉は固く閉ざされている。".into()),
+            },
+        },
         TileType::RoadExit => match current_area {
             AreaId::Town => MoveOutcome::RequestTravel {
                 destination: AreaId::Village,
@@ -221,15 +221,13 @@ pub fn try_move_player(
         // 宝箱・案内看板・NPC・お店は、接触しただけでは何も起きない（ADR-0011）。
         // 移動はブロックされるのみで、開封・会話は [Z]コマンド駆動インタラクトからのみ行える。
         TileType::ChestClosed => MoveOutcome::Blocked { message: None },
-        TileType::MonsterSymbol => {
-            MoveOutcome::TriggerBattle {
-                message: "暗闇から魔物の影が飛びかかってきた！\n不意打ちの戦闘だ！".into(),
-                monster_pos: Some(Position {
-                    x: target_x,
-                    y: target_y,
-                }),
-            }
-        }
+        TileType::MonsterSymbol => MoveOutcome::TriggerBattle {
+            message: "暗闇から魔物の影が飛びかかってきた！\n不意打ちの戦闘だ！".into(),
+            monster_pos: Some(Position {
+                x: target_x,
+                y: target_y,
+            }),
+        },
         TileType::Sign => MoveOutcome::Blocked { message: None },
         TileType::Inn => MoveOutcome::Blocked { message: None },
         TileType::Tavern => MoveOutcome::Blocked { message: None },
@@ -276,7 +274,10 @@ mod tests {
         assert!(matches!(outcome, MoveOutcome::Moved { .. }));
         assert_eq!(player_pos, Position { x: 6, y: 5 });
         assert_eq!(player_facing, Facing::Right);
-        assert_eq!(followers.get_follower_position(0), Some(Position { x: 5, y: 5 }));
+        assert_eq!(
+            followers.get_follower_position(0),
+            Some(Position { x: 5, y: 5 })
+        );
 
         let outcome2 = try_move_player(
             &mut map,
@@ -290,8 +291,14 @@ mod tests {
         assert!(matches!(outcome2, MoveOutcome::Moved { .. }));
         assert_eq!(player_pos, Position { x: 6, y: 4 });
         assert_eq!(player_facing, Facing::Up);
-        assert_eq!(followers.get_follower_position(0), Some(Position { x: 6, y: 5 }));
-        assert_eq!(followers.get_follower_position(1), Some(Position { x: 5, y: 5 }));
+        assert_eq!(
+            followers.get_follower_position(0),
+            Some(Position { x: 6, y: 5 })
+        );
+        assert_eq!(
+            followers.get_follower_position(1),
+            Some(Position { x: 5, y: 5 })
+        );
     }
 
     #[test]

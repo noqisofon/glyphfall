@@ -4,5 +4,12 @@ use crate::macros::newtype_resource;
 
 pub use glyphfall_core::event::{try_trigger_sudden_event, SuddenEventCategory};
 
-newtype_resource!(SuddenEventRegistryRes, glyphfall_core::event::SuddenEventRegistry);
-newtype_resource!(SuddenEventHistoryRes, glyphfall_core::event::SuddenEventHistory, default);
+newtype_resource!(
+    SuddenEventRegistryRes,
+    glyphfall_core::event::SuddenEventRegistry
+);
+newtype_resource!(
+    SuddenEventHistoryRes,
+    glyphfall_core::event::SuddenEventHistory,
+    default
+);

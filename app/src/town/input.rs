@@ -1,18 +1,18 @@
-use bevy::prelude::*;
-use rand::thread_rng;
-use crate::{
-    AppMode, CommandMenuStage, CommandMenuState, PartyStateRes, ShowMessage, TravelPosture,
-    TravelState,
+use super::{
+    CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
+    MoveOutcome, TownStateRes, SHOP_ITEMS,
 };
 use crate::event::{
     try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes,
 };
 use crate::party::{PlayerInventoryRes, CURRENCY_UNIT};
-use super::{
-    CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
-    MoveOutcome, TownStateRes, SHOP_ITEMS,
-};
 use crate::ActiveDialogue;
+use crate::{
+    AppMode, CommandMenuStage, CommandMenuState, PartyStateRes, ShowMessage, TravelPosture,
+    TravelState,
+};
+use bevy::prelude::*;
+use rand::thread_rng;
 
 pub fn handle_town_input(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -100,7 +100,8 @@ pub fn handle_town_input(
         *mode = AppMode::Battle;
         dialogue_res.0 = None;
         msg_events.send(ShowMessage(
-            "地下迷宮の魔物とエンカウントした！\nあなたの行動を選択してください。([B]で街へ帰還)".into(),
+            "地下迷宮の魔物とエンカウントした！\nあなたの行動を選択してください。([B]で街へ帰還)"
+                .into(),
         ));
     }
 }
@@ -129,7 +130,10 @@ pub fn handle_interact_input(
                 if command.needs_direction() {
                     let label = command.dynamic_label(town.facing_target_kind());
                     command_menu.stage = CommandMenuStage::ChoosingDirection(command);
-                    msg_events.send(ShowMessage(format!("『{}』する方向を選んでください。", label)));
+                    msg_events.send(ShowMessage(format!(
+                        "『{}』する方向を選んでください。",
+                        label
+                    )));
                 } else {
                     // 「どうぐ」は方向を選ばず、その場で所持品を確認する
                     let mut msg = format!("【どうぐ】所持金: {}{}\n", inv.gold, CURRENCY_UNIT);
@@ -156,11 +160,17 @@ pub fn handle_interact_input(
 
             if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
                 dy -= 1;
-            } else if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+            } else if keyboard.just_pressed(KeyCode::KeyS)
+                || keyboard.just_pressed(KeyCode::ArrowDown)
+            {
                 dy += 1;
-            } else if keyboard.just_pressed(KeyCode::KeyA) || keyboard.just_pressed(KeyCode::ArrowLeft) {
+            } else if keyboard.just_pressed(KeyCode::KeyA)
+                || keyboard.just_pressed(KeyCode::ArrowLeft)
+            {
                 dx -= 1;
-            } else if keyboard.just_pressed(KeyCode::KeyD) || keyboard.just_pressed(KeyCode::ArrowRight) {
+            } else if keyboard.just_pressed(KeyCode::KeyD)
+                || keyboard.just_pressed(KeyCode::ArrowRight)
+            {
                 dx += 1;
             }
 
@@ -171,7 +181,11 @@ pub fn handle_interact_input(
                     InteractOutcome::Message(msg) => {
                         msg_events.send(ShowMessage(msg));
                     }
-                    InteractOutcome::ChestOpened { gold, item, message } => {
+                    InteractOutcome::ChestOpened {
+                        gold,
+                        item,
+                        message,
+                    } => {
                         inv.add_gold(gold);
                         inv.add_item(&item);
                         msg_events.send(ShowMessage(message));
@@ -248,7 +262,9 @@ pub fn handle_dialogue_input(
                 if let Some(session) = dialogue_res.0.as_mut() {
                     match session.learnable_spans.len() {
                         0 => {
-                            msg_events.send(ShowMessage("新しく覚えられるキーワードは見当たらない。".into()));
+                            msg_events.send(ShowMessage(
+                                "新しく覚えられるキーワードは見当たらない。".into(),
+                            ));
                         }
                         1 => {
                             let word = session.learnable_spans[0].slice(&session.current_text);

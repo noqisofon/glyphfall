@@ -127,16 +127,16 @@ fn main() {
             },
         }))
         .insert_resource(BattleStateRes(BattleState::new(create_default_monsters())))
-        .insert_resource(ReserveRosterRes(glyphfall_core::party::ReserveRoster::new(vec![
-            PartyMember::new(
+        .insert_resource(ReserveRosterRes(glyphfall_core::party::ReserveRoster::new(
+            vec![PartyMember::new(
                 "騎士アルヴィン",
                 "きし",
                 Influence::new_supernatural(115), // 魅了による異常値
                 MentalState::Charmed,
                 Personality::Loyal,
             )
-            .with_stats(40, 15),
-        ])))
+            .with_stats(40, 15)],
+        )))
         .insert_resource(PartyStateRes(glyphfall_core::party::PartyState {
             selected_index: 0,
             debug_mode: false,
@@ -189,10 +189,7 @@ fn main() {
                     battle::handle_battle_input.run_if(in_mode(AppMode::Battle)),
                     town::handle_travel_input.run_if(in_mode(AppMode::Travel)),
                 ),
-                (
-                    ui::update_message_window,
-                    ui::update_town_texture_system,
-                ),
+                (ui::update_message_window, ui::update_town_texture_system),
                 (
                     ui::update_status_header_system,
                     ui::update_tri_split_windows_system,

@@ -6,9 +6,9 @@ pub mod origin;
 
 pub use action::{evaluate_command, ActionOutcome, PartyCommand, PlayerBattleAction};
 pub use diagnosis::{diagnose_member, PlayerSkills};
-pub use inventory::{PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 #[allow(unused_imports)]
 pub use influence::{Influence, MentalState, PartyMember, Personality, MAX_NATURAL_INFLUENCE};
+pub use inventory::{PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 pub use origin::*;
 
 /// 将来のルイーダの酒場（パーティ編成所）用の控えメンバーリスト
@@ -38,9 +38,6 @@ pub struct PartyState {
 pub struct PlayerResource {
     pub skills: PlayerSkills,
 }
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -87,7 +84,6 @@ mod tests {
             Personality::Loyal,
         );
 
-
         // 遊び人（影響度50、マイナス補正大、サボり率高）
         let slacker = PartyMember::new(
             "遊び人ロロ",
@@ -103,13 +99,17 @@ mod tests {
         let loyal_outcomes: Vec<_> = (0..20)
             .map(|_| evaluate_command(&loyal_warrior, PartyCommand::Attack, &mut rng))
             .collect();
-        assert!(loyal_outcomes.iter().any(|o| matches!(o, ActionOutcome::Obeyed { .. })));
+        assert!(loyal_outcomes
+            .iter()
+            .any(|o| matches!(o, ActionOutcome::Obeyed { .. })));
 
         // 遊び人は高確率で不服従・サボりが発生する
         let slacker_outcomes: Vec<_> = (0..20)
             .map(|_| evaluate_command(&slacker, PartyCommand::Attack, &mut rng))
             .collect();
-        assert!(slacker_outcomes.iter().any(|o| matches!(o, ActionOutcome::Disobeyed { .. })));
+        assert!(slacker_outcomes
+            .iter()
+            .any(|o| matches!(o, ActionOutcome::Disobeyed { .. })));
     }
 
     #[test]
@@ -144,13 +144,14 @@ mod tests {
             Personality::Yandere,
         );
 
-
         let mut rng = StdRng::seed_from_u64(999);
 
         // 熟練者の観察：魅了を看破
         let report_charmed = diagnose_member(&expert_skills, &charmed_knight, &mut rng);
         assert!(report_charmed.success);
-        assert!(report_charmed.conclusion_msg.contains("魅了呪文に操られている"));
+        assert!(report_charmed
+            .conclusion_msg
+            .contains("魅了呪文に操られている"));
 
         // 熟練者の観察：ヤンデレ（素の執着）を看破
         let report_yandere = diagnose_member(&expert_skills, &yandere_mage, &mut rng);

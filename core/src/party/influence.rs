@@ -27,9 +27,11 @@ impl Influence {
     /// 素の人間として影響度を上昇させる（自然上限89で頭打ち）
     #[allow(dead_code)]
     pub fn add_natural(&mut self, amount: u8) {
-        self.raw_value = self.raw_value.saturating_add(amount).min(MAX_NATURAL_INFLUENCE);
+        self.raw_value = self
+            .raw_value
+            .saturating_add(amount)
+            .min(MAX_NATURAL_INFLUENCE);
     }
-
 
     /// 異常な領域（外的魔術介入レベル）に達しているか
     pub fn is_abnormal(&self) -> bool {
@@ -53,7 +55,6 @@ pub enum MentalState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum Personality {
-
     /// プレイヤー自身：自らの意志で行動する
     Player,
     /// 忠実：誠実で命令に従いやすいが、上限89の制約は受ける

@@ -1,15 +1,15 @@
-use bevy::prelude::*;
-use crate::{
-    battle::{BattlePhase, BattleState, BattleStateRes, Monster},
-    party::{MentalState, PartyState, PartyStateRes, PlayerInventory, Personality, CURRENCY_UNIT},
-    town::{DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes, INN_COST},
-    ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
-    TravelState, SHOP_ITEMS,
-};
 use super::{
     BattleMonsterTextNode, LeftWindowTextNode, RightWindowTextNode, StatusHeaderNode,
     TownMapImageNode,
 };
+use crate::{
+    battle::{BattlePhase, BattleState, BattleStateRes, Monster},
+    party::{MentalState, PartyState, PartyStateRes, Personality, PlayerInventory, CURRENCY_UNIT},
+    town::{DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes, INN_COST},
+    ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
+    TravelState, SHOP_ITEMS,
+};
+use bevy::prelude::*;
 
 pub fn format_status_header(
     party: &PartyState,
@@ -53,10 +53,18 @@ pub fn format_status_header(
         };
         header.push_str(&format!(
             "  [DEBUG] 影響度: {} {} | 精神: {} | 性格: {} | 全視界: {}\n",
-            member.influence.raw_value, abnormal_str, mental_str, personality_str, town.debug_see_all
+            member.influence.raw_value,
+            abnormal_str,
+            mental_str,
+            personality_str,
+            town.debug_see_all
         ));
     } else {
-        let torch_str = if town.torch_active { "点灯中(半径6)" } else { "消灯(半径2)" };
+        let torch_str = if town.torch_active {
+            "点灯中(半径6)"
+        } else {
+            "消灯(半径2)"
+        };
         match mode {
             AppMode::Town => {
                 header.push_str(&format!(
@@ -68,7 +76,10 @@ pub fn format_status_header(
                 ));
             }
             AppMode::Dialogue => {
-                let partner_name = dialogue.as_ref().map(|s| s.partner.name()).unwrap_or("相手");
+                let partner_name = dialogue
+                    .as_ref()
+                    .map(|s| s.partner.name())
+                    .unwrap_or("相手");
                 let learn_stage = dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default();
                 match learn_stage {
                     DialogueLearnStage::Talking => {
@@ -138,24 +149,29 @@ pub fn format_status_header(
                 header.push_str("操作: [WASD]方向を選択 | [Esc]やめる");
             }
         },
-        AppMode::Dialogue => {
-            match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
-                DialogueLearnStage::Talking => {
-                    header.push_str("操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる");
-                }
-                DialogueLearnStage::ChoosingLearnTarget { .. } => {
-                    header.push_str("操作: [W/S]候補選択 | [1/Enter]決定 | [3/Esc]やめる");
-                }
+        AppMode::Dialogue => match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
+            DialogueLearnStage::Talking => {
+                header.push_str(
+                    "操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる",
+                );
             }
-        }
+            DialogueLearnStage::ChoosingLearnTarget { .. } => {
+                header.push_str("操作: [W/S]候補選択 | [1/Enter]決定 | [3/Esc]やめる");
+            }
+        },
         AppMode::Shop => {
             header.push_str("操作: [W/S]商品選択 | [1/Enter]かう | [3/Esc]店を出る");
         }
         AppMode::Inn => {
-            header.push_str(&format!("操作: [1/Enter]とまる({}{}) | [3/Esc]やめる", INN_COST, CURRENCY_UNIT));
+            header.push_str(&format!(
+                "操作: [1/Enter]とまる({}{}) | [3/Esc]やめる",
+                INN_COST, CURRENCY_UNIT
+            ));
         }
         AppMode::Battle => {
-            header.push_str("操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行 | [N]敵切替 | [B]街へ帰還");
+            header.push_str(
+                "操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行 | [N]敵切替 | [B]街へ帰還",
+            );
         }
         AppMode::Travel => {
             header.push_str("操作: [1]慎重に | [2]普通に | [3]大胆に | [Esc]やめる");
@@ -186,7 +202,11 @@ pub fn format_left_window(
                     } else {
                         " "
                     };
-                    out.push_str(&format!("{} {}\n", cursor, cmd.dynamic_label(facing_target)));
+                    out.push_str(&format!(
+                        "{} {}\n",
+                        cursor,
+                        cmd.dynamic_label(facing_target)
+                    ));
                 }
                 out
             }
@@ -213,7 +233,10 @@ pub fn format_left_window(
             let mut out = format!("【品物】(金:{}{})\n", inv.gold, CURRENCY_UNIT);
             for (idx, item) in SHOP_ITEMS.iter().enumerate() {
                 let cursor = if idx == selected { "▶" } else { " " };
-                out.push_str(&format!("{}{} {:2}{}\n", cursor, item.name, item.price, CURRENCY_UNIT));
+                out.push_str(&format!(
+                    "{}{} {:2}{}\n",
+                    cursor, item.name, item.price, CURRENCY_UNIT
+                ));
             }
             out
         }
@@ -230,32 +253,33 @@ pub fn format_left_window(
             }
             out
         }
-        AppMode::Battle => {
-            match &battle.phase {
-                BattlePhase::CommandInput { member_cursor } => {
-                    let cursor = *member_cursor;
-                    if cursor == 0 {
-                        "【あなたの行動】\n[1]たたかう\n[2]みをまもる\n[3]どうぐ(草)\n[4]観察 5:逃走".into()
-                    } else if cursor < party.members.len() {
-                        let member = &party.members[cursor];
-                        format!(
-                            "【{}へ指示】\n[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]じゅもん",
-                            member.name
-                        )
-                    } else {
-                        "【指示決定】\nターン開始準備完了".into()
-                    }
-                }
-                BattlePhase::TurnResolving { step_cursor } => {
+        AppMode::Battle => match &battle.phase {
+            BattlePhase::CommandInput { member_cursor } => {
+                let cursor = *member_cursor;
+                if cursor == 0 {
+                    "【あなたの行動】\n[1]たたかう\n[2]みをまもる\n[3]どうぐ(草)\n[4]観察 5:逃走"
+                        .into()
+                } else if cursor < party.members.len() {
+                    let member = &party.members[cursor];
                     format!(
-                        "【ターン進行中】\n進捗: {}/{}\n\n[Space]で次へ",
-                        step_cursor + 1,
-                        battle.turn_steps.len().max(1)
+                        "【{}へ指示】\n[1]たたかう\n[2]みをまもる\n[3]すてみ\n[4]じゅもん",
+                        member.name
                     )
+                } else {
+                    "【指示決定】\nターン開始準備完了".into()
                 }
-                BattlePhase::Defeat => "【全滅……】\nあなたは力尽きた\n\n[B]街へ逃走\n(宿屋で治療)".into(),
             }
-        }
+            BattlePhase::TurnResolving { step_cursor } => {
+                format!(
+                    "【ターン進行中】\n進捗: {}/{}\n\n[Space]で次へ",
+                    step_cursor + 1,
+                    battle.turn_steps.len().max(1)
+                )
+            }
+            BattlePhase::Defeat => {
+                "【全滅……】\nあなたは力尽きた\n\n[B]街へ逃走\n(宿屋で治療)".into()
+            }
+        },
         AppMode::Travel => {
             format!(
                 "【街道】\n行き先:\n{}\n\nどのように\n進みますか？",
@@ -276,41 +300,40 @@ pub fn format_right_window(
             CommandMenuStage::ChoosingCommand => "[W/S]選択\n[1/Enter]決定\n[3/Esc]やめる".into(),
             CommandMenuStage::ChoosingDirection(_) => "[WASD]方向選択\n[Esc]やめる".into(),
         },
-        AppMode::Dialogue => {
-            match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
-                DialogueLearnStage::Talking => {
-                    let has_learnable = dialogue
-                        .as_ref()
-                        .map(|s| !s.learnable_spans.is_empty())
-                        .unwrap_or(false);
-                    let learn_str = if has_learnable {
-                        "[2]おぼえる★"
-                    } else {
-                        "[2]おぼえる"
-                    };
-                    format!("[1]たずねる\n{}\n[3]はなれる\n(W/S:選択)", learn_str)
-                }
-                DialogueLearnStage::ChoosingLearnTarget { .. } => {
-                    "[1]決定\n[3]やめる\n\n(W/S:候補選択)".into()
-                }
+        AppMode::Dialogue => match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
+            DialogueLearnStage::Talking => {
+                let has_learnable = dialogue
+                    .as_ref()
+                    .map(|s| !s.learnable_spans.is_empty())
+                    .unwrap_or(false);
+                let learn_str = if has_learnable {
+                    "[2]おぼえる★"
+                } else {
+                    "[2]おぼえる"
+                };
+                format!("[1]たずねる\n{}\n[3]はなれる\n(W/S:選択)", learn_str)
             }
-        }
+            DialogueLearnStage::ChoosingLearnTarget { .. } => {
+                "[1]決定\n[3]やめる\n\n(W/S:候補選択)".into()
+            }
+        },
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
-        AppMode::Inn => format!("[1]とまる({}{})\n[3]やめる\n\n(HP/MP全回復)", INN_COST, CURRENCY_UNIT),
+        AppMode::Inn => format!(
+            "[1]とまる({}{})\n[3]やめる\n\n(HP/MP全回復)",
+            INN_COST, CURRENCY_UNIT
+        ),
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
-        AppMode::Battle => {
-            match &battle.phase {
-                BattlePhase::CommandInput { member_cursor } => {
-                    if *member_cursor == 0 {
-                        "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into()
-                    } else {
-                        "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into()
-                    }
+        AppMode::Battle => match &battle.phase {
+            BattlePhase::CommandInput { member_cursor } => {
+                if *member_cursor == 0 {
+                    "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into()
+                } else {
+                    "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into()
                 }
-                BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),
-                BattlePhase::Defeat => "[B]街へ帰還\n\n(敗北)".into(),
             }
-        }
+            BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),
+            BattlePhase::Defeat => "[B]街へ帰還\n\n(敗北)".into(),
+        },
         AppMode::Travel => "[1]慎重に\n[2]普通に\n[3]大胆に\n[Esc]やめる".into(),
     }
 }
@@ -344,8 +367,14 @@ pub fn update_town_texture_system(
 
 pub fn update_center_window_visibility_system(
     mode: Res<AppMode>,
-    mut town_image_query: Query<&mut Node, (With<TownMapImageNode>, Without<BattleMonsterTextNode>)>,
-    mut battle_monster_query: Query<&mut Node, (With<BattleMonsterTextNode>, Without<TownMapImageNode>)>,
+    mut town_image_query: Query<
+        &mut Node,
+        (With<TownMapImageNode>, Without<BattleMonsterTextNode>),
+    >,
+    mut battle_monster_query: Query<
+        &mut Node,
+        (With<BattleMonsterTextNode>, Without<TownMapImageNode>),
+    >,
 ) {
     if !mode.is_changed() {
         return;
@@ -448,7 +477,12 @@ pub fn update_tri_split_windows_system(
             ));
         }
         if let Ok(mut text) = right_query.get_single_mut() {
-            *text = Text::new(format_right_window(*mode, &dialogue.0, &command_menu, &battle));
+            *text = Text::new(format_right_window(
+                *mode,
+                &dialogue.0,
+                &command_menu,
+                &battle,
+            ));
         }
     }
 }

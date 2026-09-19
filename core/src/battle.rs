@@ -1,9 +1,9 @@
-use rand::Rng;
 use crate::party::{
     diagnose_member, evaluate_command, ActionOutcome, PartyCommand, PartyMember, Personality,
     PlayerBattleAction, PlayerSkills,
 };
 use crate::timer::SimpleTimer;
+use rand::Rng;
 
 /// 敵モンスターの定義
 #[derive(Debug, Clone)]
@@ -146,7 +146,10 @@ impl BattleState {
                 sim_mon_hp = (sim_mon_hp - dmg).max(0);
                 let is_dead = sim_mon_hp <= 0;
                 steps.push(BattleStep {
-                    message: format!("あなた（一般人）は　必死に石を投げつけた！\n{}に {}の ダメージ！", mon_name, dmg),
+                    message: format!(
+                        "あなた（一般人）は　必死に石を投げつけた！\n{}に {}の ダメージ！",
+                        mon_name, dmg
+                    ),
                     monster_damage: Some(dmg),
                     member_damage: None,
                     member_heal: None,
@@ -222,7 +225,10 @@ impl BattleState {
                     let pick = rng.gen_range(0..living_companions.len());
                     let target_idx = living_companions[pick];
                     let report = diagnose_member(skills, &members[target_idx], rng);
-                    format!("あなた「{}の様子を見よう」\n{}\n{}", members[target_idx].name, report.observation_msg, report.conclusion_msg)
+                    format!(
+                        "あなた「{}の様子を見よう」\n{}\n{}",
+                        members[target_idx].name, report.observation_msg, report.conclusion_msg
+                    )
                 } else {
                     "あなた「様子を見ようにも、仲間がいない……」".to_string()
                 };
@@ -240,7 +246,9 @@ impl BattleState {
                 let success = rng.gen_bool(0.5);
                 if success {
                     steps.push(BattleStep {
-                        message: "あなたは仲間たちに合図を出し、脱出路へ走り込んだ！\nうまく逃げ切れた！".into(),
+                        message:
+                            "あなたは仲間たちに合図を出し、脱出路へ走り込んだ！\nうまく逃げ切れた！"
+                                .into(),
                         monster_damage: None,
                         member_damage: None,
                         member_heal: None,
@@ -274,7 +282,11 @@ impl BattleState {
                 // 戦闘不能なメンバーは行動できない
                 continue;
             }
-            let cmd = self.party_commands.get(i).and_then(|c| *c).unwrap_or(PartyCommand::Attack);
+            let cmd = self
+                .party_commands
+                .get(i)
+                .and_then(|c| *c)
+                .unwrap_or(PartyCommand::Attack);
             let outcome = evaluate_command(member, cmd, rng);
 
             match outcome {
@@ -285,7 +297,10 @@ impl BattleState {
                             sim_mon_hp = (sim_mon_hp - dmg).max(0);
                             let is_dead = sim_mon_hp <= 0;
                             steps.push(BattleStep {
-                                message: format!("{}に「たたかう」よう指示した！\n{}\n{}に {}の ダメージ！", member.name, action_msg, mon_name, dmg),
+                                message: format!(
+                                    "{}に「たたかう」よう指示した！\n{}\n{}に {}の ダメージ！",
+                                    member.name, action_msg, mon_name, dmg
+                                ),
                                 monster_damage: Some(dmg),
                                 member_damage: None,
                                 member_heal: None,
@@ -299,7 +314,10 @@ impl BattleState {
                         }
                         PartyCommand::Defend => {
                             steps.push(BattleStep {
-                                message: format!("{}に「みをまもる」よう指示した。\n{}", member.name, action_msg),
+                                message: format!(
+                                    "{}に「みをまもる」よう指示した。\n{}",
+                                    member.name, action_msg
+                                ),
                                 monster_damage: None,
                                 member_damage: None,
                                 member_heal: None,
@@ -344,14 +362,20 @@ impl BattleState {
                         }
                     }
                 }
-                ActionOutcome::Disobeyed { reason_msg, action_msg } => {
+                ActionOutcome::Disobeyed {
+                    reason_msg,
+                    action_msg,
+                } => {
                     // ヤンデレの暴走攻撃
                     if member.personality == Personality::Yandere {
                         let dmg = rng.gen_range(16..=24);
                         sim_mon_hp = (sim_mon_hp - dmg).max(0);
                         let is_dead = sim_mon_hp <= 0;
                         steps.push(BattleStep {
-                            message: format!("{}に指示した！\n{}\n{}\nなんと {}に {}の 暴走ダメージ！", member.name, reason_msg, action_msg, mon_name, dmg),
+                            message: format!(
+                                "{}に指示した！\n{}\n{}\nなんと {}に {}の 暴走ダメージ！",
+                                member.name, reason_msg, action_msg, mon_name, dmg
+                            ),
                             monster_damage: Some(dmg),
                             member_damage: None,
                             member_heal: None,
@@ -364,7 +388,10 @@ impl BattleState {
                         }
                     } else {
                         steps.push(BattleStep {
-                            message: format!("{}に指示した！\n{}\n{}", member.name, reason_msg, action_msg),
+                            message: format!(
+                                "{}に指示した！\n{}\n{}",
+                                member.name, reason_msg, action_msg
+                            ),
                             monster_damage: None,
                             member_damage: None,
                             member_heal: None,
@@ -421,7 +448,10 @@ impl BattleState {
 
                     let target_name = &members[target_pick].name;
                     steps.push(BattleStep {
-                        message: format!("{}の反撃！\n{}は {}の ダメージを受けた！", mon_name, target_name, raw_dmg),
+                        message: format!(
+                            "{}の反撃！\n{}は {}の ダメージを受けた！",
+                            mon_name, target_name, raw_dmg
+                        ),
                         monster_damage: None,
                         member_damage: Some((target_pick, raw_dmg)),
                         member_heal: None,
@@ -468,7 +498,6 @@ impl BattleState {
         }
     }
 }
-
 
 // ─────────────────────────────────────────────
 // モンスターのグリフアート（ASCII / Unicode）
@@ -671,7 +700,12 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
 
         battle.player_action = Some(PlayerBattleAction::UseItem);
-        battle.party_commands = vec![None, None, Some(PartyCommand::Defend), Some(PartyCommand::Defend)];
+        battle.party_commands = vec![
+            None,
+            None,
+            Some(PartyCommand::Defend),
+            Some(PartyCommand::Defend),
+        ];
 
         battle.build_turn_resolution(&party, &skills, &mut rng);
 

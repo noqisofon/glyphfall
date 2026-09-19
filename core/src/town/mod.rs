@@ -70,7 +70,12 @@ impl TownState {
         self.dirty = true;
     }
 
-    pub fn switch_area<R: rand::Rng>(&mut self, new_area: AreaId, spawn_pos: Position, rng: &mut R) {
+    pub fn switch_area<R: rand::Rng>(
+        &mut self,
+        new_area: AreaId,
+        spawn_pos: Position,
+        rng: &mut R,
+    ) {
         self.current_area = new_area;
         self.map = match new_area {
             AreaId::Town => TownMap::create_arkan_capital(),
@@ -192,7 +197,11 @@ mod tests {
     #[test]
     fn test_town_state_monster_encounter_and_clear() {
         let mut state = TownState::new();
-        state.switch_area(AreaId::DungeonB1F, Position { x: 5, y: 5 }, &mut StdRng::seed_from_u64(1));
+        state.switch_area(
+            AreaId::DungeonB1F,
+            Position { x: 5, y: 5 },
+            &mut StdRng::seed_from_u64(1),
+        );
         // (5, 4) に魔物シンボルを配置
         state.map.set(5, 4, TileType::MonsterSymbol);
 

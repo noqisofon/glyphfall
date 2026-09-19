@@ -496,4 +496,3 @@ mod tests {
         assert!(buffer.iter().any(|&b| b > 0));
     }
 }
-

@@ -68,7 +68,9 @@ impl OriginKind {
         match self {
             OriginKind::MerchantSon => "初期資金: 350G / HP: 20 / MP: 5 / 特やくそう・松明多数",
             OriginKind::FormerMercenary => "初期資金: 80G / HP: 32 / MP: 0 / やくそう・松明",
-            OriginKind::FormerAcolyte => "初期資金: 120G / HP: 18 / MP: 20 / 魔術知識・目星高 / どくけし草",
+            OriginKind::FormerAcolyte => {
+                "初期資金: 120G / HP: 18 / MP: 20 / 魔術知識・目星高 / どくけし草"
+            }
             OriginKind::FarmerThirdSon => "初期資金: 40G / HP: 24 / MP: 0 / 頑丈なパンピースタート",
         }
     }
@@ -277,7 +279,9 @@ impl Default for CharacterBuild {
 impl CharacterBuild {
     pub fn new(origin: OriginKind, motive: MotiveKind) -> Self {
         let partner = if motive == MotiveKind::Eloper {
-            EloperPartnerCandidate::default_candidates().into_iter().next()
+            EloperPartnerCandidate::default_candidates()
+                .into_iter()
+                .next()
         } else {
             None
         };

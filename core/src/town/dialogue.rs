@@ -68,7 +68,10 @@ pub struct LearnableSpan {
 
 impl LearnableSpan {
     pub fn slice(&self, text: &str) -> String {
-        text.chars().skip(self.start).take(self.end - self.start).collect()
+        text.chars()
+            .skip(self.start)
+            .take(self.end - self.start)
+            .collect()
     }
 }
 
@@ -184,7 +187,10 @@ impl DialogueSession {
                     self.learnable_spans = spans_for(&self.current_text, &["光のオーブ"]);
                 }
                 _ => {
-                    self.current_text = format!("王都衛兵「『{}』だと？…すまんが俺の知るところではないな」", topic);
+                    self.current_text = format!(
+                        "王都衛兵「『{}』だと？…すまんが俺の知るところではないな」",
+                        topic
+                    );
                     self.learnable_spans = Vec::new();
                 }
             },
@@ -202,7 +208,8 @@ impl DialogueSession {
                     self.learnable_spans = spans_for(&self.current_text, &["裏の抜け道"]);
                 }
                 _ => {
-                    self.current_text = format!("呑兵衛「『{}』かぁ？知らねえな！酒がうめえ！」", topic);
+                    self.current_text =
+                        format!("呑兵衛「『{}』かぁ？知らねえな！酒がうめえ！」", topic);
                     self.learnable_spans = Vec::new();
                 }
             },
@@ -212,7 +219,9 @@ impl DialogueSession {
                     self.learnable_spans = spans_for(&self.current_text, &["地下迷宮", "銀の鍵"]);
                 }
                 "銀の鍵" => {
-                    self.current_text = "怪しい男「迷宮の北の宝物庫だ。鉄格子の奥の宝箱に入ってるはずだぜ…ヒヒッ」".into();
+                    self.current_text =
+                        "怪しい男「迷宮の北の宝物庫だ。鉄格子の奥の宝箱に入ってるはずだぜ…ヒヒッ」"
+                            .into();
                     self.learnable_spans = Vec::new();
                 }
                 "裏の抜け道" => {
@@ -220,7 +229,10 @@ impl DialogueSession {
                     self.learnable_spans = Vec::new();
                 }
                 _ => {
-                    self.current_text = format!("怪しい男「ヒヒッ…『{}』かい？あっしには関係ねえ話だな」", topic);
+                    self.current_text = format!(
+                        "怪しい男「ヒヒッ…『{}』かい？あっしには関係ねえ話だな」",
+                        topic
+                    );
                     self.learnable_spans = Vec::new();
                 }
             },
@@ -234,12 +246,14 @@ impl DialogueSession {
                     self.learnable_spans = Vec::new();
                 }
                 _ => {
-                    self.current_text = format!("街の女性「『{}』ですか？私にはよくわかりませんね…」", topic);
+                    self.current_text =
+                        format!("街の女性「『{}』ですか？私にはよくわかりませんね…」", topic);
                     self.learnable_spans = Vec::new();
                 }
             },
             _ => {
-                self.current_text = format!("「『{}』についてですね。よく覚えておきましょう」", topic);
+                self.current_text =
+                    format!("「『{}』についてですね。よく覚えておきましょう」", topic);
                 self.learnable_spans = Vec::new();
             }
         }
@@ -421,4 +435,3 @@ mod tests {
             .collect()
     }
 }
-

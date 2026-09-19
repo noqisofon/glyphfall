@@ -1,5 +1,5 @@
+use super::influence::{MentalState, PartyMember, Personality};
 use rand::Rng;
-use super::influence::{PartyMember, Personality, MentalState};
 
 /// プレイヤー（あなた）自身の戦闘行動
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,9 +68,7 @@ impl PartyCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionOutcome {
     /// 指示通りに行動した
-    Obeyed {
-        action_msg: String,
-    },
+    Obeyed { action_msg: String },
     /// 指示を拒否し、自律行動（またはサボり・暴走）した
     Disobeyed {
         reason_msg: String,
@@ -137,13 +135,11 @@ pub fn evaluate_command<R: Rng>(
             PartyCommand::Attack => format!("{}は　指示どおり　果敢に　切り込んだ！", member.name),
             PartyCommand::Defend => format!("{}は　身構えて　身を守っている！", member.name),
             PartyCommand::DesperateAttack => {
-
                 format!("{}は　覚悟を決めて　すてみの突撃を敢行した！", member.name)
             }
             PartyCommand::CastSpell => {
                 format!("{}は　呪文を唱えた！　カエンダンが炸裂する！", member.name)
             }
-
         };
         ActionOutcome::Obeyed { action_msg }
     } else {
@@ -162,19 +158,26 @@ fn generate_disobedient_behavior<R: Rng>(
     rng: &mut R,
 ) -> (String, String) {
     match member.personality {
-        Personality::Player => {
-            ("".to_string(), format!("{}は　指示どおり行動した！", member.name))
-        }
+        Personality::Player => (
+            "".to_string(),
+            format!("{}は　指示どおり行動した！", member.name),
+        ),
         Personality::Slacker => {
             let roll = rng.gen_range(0..3);
             let reason = if command == PartyCommand::Defend {
-                format!("{}は「守るなんてダサいっしょ〜」とヘラヘラしている！", member.name)
+                format!(
+                    "{}は「守るなんてダサいっしょ〜」とヘラヘラしている！",
+                    member.name
+                )
             } else {
                 format!("{}は　指示をきかず　そっぽを向いた！", member.name)
             };
             let action = match roll {
                 0 => format!("{}は　あくびをして　爪をといでいる！", member.name),
-                1 => format!("{}は　くだらないダジャレを言った！　だれも笑っていない。", member.name),
+                1 => format!(
+                    "{}は　くだらないダジャレを言った！　だれも笑っていない。",
+                    member.name
+                ),
                 _ => format!("{}は　勝手にポケットのパンをかじっている！", member.name),
             };
             (reason, action)
@@ -183,7 +186,10 @@ fn generate_disobedient_behavior<R: Rng>(
             let reason = if command == PartyCommand::DesperateAttack {
                 format!("{}は「そんなの無理です！」と涙目で拒絶した！", member.name)
             } else if command == PartyCommand::Defend {
-                format!("{}は　パニックを起こして指示が耳に入っていない！", member.name)
+                format!(
+                    "{}は　パニックを起こして指示が耳に入っていない！",
+                    member.name
+                )
             } else {
                 format!("{}は　恐怖で足がすくんでいる！", member.name)
             };
@@ -212,15 +218,20 @@ fn generate_disobedient_behavior<R: Rng>(
         }
         Personality::Loyal => {
             let reason = if command == PartyCommand::DesperateAttack {
-                format!("{}は「あなたを残して死ねません！」と諫言した！", member.name)
+                format!(
+                    "{}は「あなたを残して死ねません！」と諫言した！",
+                    member.name
+                )
             } else if command == PartyCommand::Defend {
-                format!("{}は「ここは私が攻めるべきです！」と進言した！", member.name)
+                format!(
+                    "{}は「ここは私が攻めるべきです！」と進言した！",
+                    member.name
+                )
             } else {
                 format!("{}は　とっさの判断で指示と違う行動をとった！", member.name)
             };
             let action = format!("{}は　周囲の警戒を固めている！", member.name);
             (reason, action)
         }
-
     }
 }

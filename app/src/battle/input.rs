@@ -1,9 +1,11 @@
-use bevy::prelude::*;
-use rand::thread_rng;
-use glyphfall_core::party::{PartyMember, PlayerSkills};
-use crate::{AppMode, PartyStateRes, PlayerInventoryRes, PlayerResourceRes, ShowMessage, TownStateRes};
-use crate::party::{PartyCommand, PlayerBattleAction};
 use super::{BattlePhase, BattleStateRes};
+use crate::party::{PartyCommand, PlayerBattleAction};
+use crate::{
+    AppMode, PartyStateRes, PlayerInventoryRes, PlayerResourceRes, ShowMessage, TownStateRes,
+};
+use bevy::prelude::*;
+use glyphfall_core::party::{PartyMember, PlayerSkills};
+use rand::thread_rng;
 
 fn next_alive_member(members: &[PartyMember], start_idx: usize) -> Option<usize> {
     (start_idx..members.len()).find(|&i| members[i].hp > 0)
@@ -100,7 +102,9 @@ pub fn handle_battle_input(
                 if let Some(action) = chosen {
                     battle.player_action = Some(action);
                     if let Some(next_idx) = next_alive_member(&party.members, 1) {
-                        battle.phase = BattlePhase::CommandInput { member_cursor: next_idx };
+                        battle.phase = BattlePhase::CommandInput {
+                            member_cursor: next_idx,
+                        };
                         let next_name = &party.members[next_idx].name;
                         msg_events.send(ShowMessage(format!(
                             "あなた:「{}」を選択した。\n続いて、{} への指示を選択してください。",
@@ -109,7 +113,13 @@ pub fn handle_battle_input(
                         )));
                     } else {
                         // 生存している仲間がいない場合、全員の指示決定としてターン解決を実行
-                        start_turn_resolution(&mut battle, &mut party.members, &player.skills, &mut rng, &mut msg_events);
+                        start_turn_resolution(
+                            &mut battle,
+                            &mut party.members,
+                            &player.skills,
+                            &mut rng,
+                            &mut msg_events,
+                        );
                     }
                 }
             } else if member_cursor < party.members.len() {
@@ -143,11 +153,20 @@ pub fn handle_battle_input(
                         )));
                     } else {
                         // 全員の指示が決定！ターン解決を実行
-                        start_turn_resolution(&mut battle, &mut party.members, &player.skills, &mut rng, &mut msg_events);
+                        start_turn_resolution(
+                            &mut battle,
+                            &mut party.members,
+                            &player.skills,
+                            &mut rng,
+                            &mut msg_events,
+                        );
                     }
                 } else if keyboard.just_pressed(KeyCode::Escape) {
                     // 1つ前の生存メンバーに戻る
-                    let prev_idx = (0..member_cursor).rev().find(|&i| i == 0 || party.members[i].hp > 0).unwrap_or(0);
+                    let prev_idx = (0..member_cursor)
+                        .rev()
+                        .find(|&i| i == 0 || party.members[i].hp > 0)
+                        .unwrap_or(0);
                     battle.phase = BattlePhase::CommandInput {
                         member_cursor: prev_idx,
                     };
@@ -245,7 +264,11 @@ pub fn handle_battle_input(
                 }
                 town.last_encounter_pos = None;
                 // 王都アルカンの宿屋前 (3, 4) に帰還
-                town.switch_area(crate::AreaId::Town, crate::Position { x: 3, y: 4 }, &mut rng);
+                town.switch_area(
+                    crate::AreaId::Town,
+                    crate::Position { x: 3, y: 4 },
+                    &mut rng,
+                );
                 *mode = AppMode::Town;
                 battle.reset_turn_commands(party.members.len());
                 msg_events.send(ShowMessage(

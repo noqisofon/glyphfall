@@ -94,7 +94,8 @@ pub enum InteractOutcome {
 }
 
 const SIGN_TEXT_TOWN: &str = "【王都アルカン・案内看板】\n北西: 宿屋[H]・酒場[T]  北東: 道具屋[S]\n南西: 貧民街裏路地     南東: 地下迷宮封鎖地区";
-const SIGN_TEXT_VILLAGE: &str = "【すずかけ村・案内看板】\n西: のどかな農家・畑    東: 街道への出入口\n中央: 村の古井戸と広場";
+const SIGN_TEXT_VILLAGE: &str =
+    "【すずかけ村・案内看板】\n西: のどかな農家・畑    東: 街道への出入口\n中央: 村の古井戸と広場";
 const SIGN_TEXT_DUNGEON: &str = "風化した古い警告板だ。\n『深層へ進む者よ、引き返す勇気を持て』";
 
 /// Zメニューでコマンドと方向が確定した後の判定本体。
@@ -138,9 +139,7 @@ fn resolve_examine(
         TileType::Tavern => {
             InteractOutcome::Message("酒場の呑兵衛が上機嫌に酒をあおっている。".into())
         }
-        TileType::Shop => {
-            InteractOutcome::Message("道具屋の店主が商品を並べ直している。".into())
-        }
+        TileType::Shop => InteractOutcome::Message("道具屋の店主が商品を並べ直している。".into()),
         TileType::NpcGuard => {
             let msg = match area {
                 AreaId::Village => "村の自警団員が周囲を警戒している。",
@@ -171,7 +170,10 @@ fn resolve_examine(
             InteractOutcome::ChestOpened {
                 gold: 120,
                 item: "特やくそう".into(),
-                message: format!("宝箱を調べた！\n120{}と「特やくそう」を手に入れた！", CURRENCY_NAME),
+                message: format!(
+                    "宝箱を調べた！\n120{}と「特やくそう」を手に入れた！",
+                    CURRENCY_NAME
+                ),
             }
         }
         TileType::ChestOpen => InteractOutcome::Message("空になった宝箱だ。".into()),
@@ -204,7 +206,9 @@ fn resolve_talk(tile: Option<TileType>) -> InteractOutcome {
         Some(TileType::Shop) => InteractOutcome::StartDialogue(DialoguePartner::Shop),
         Some(TileType::NpcGuard) => InteractOutcome::StartDialogue(DialoguePartner::Guard),
         Some(TileType::NpcVillager) => InteractOutcome::StartDialogue(DialoguePartner::Villager),
-        Some(TileType::NpcSuspicious) => InteractOutcome::StartDialogue(DialoguePartner::Suspicious),
+        Some(TileType::NpcSuspicious) => {
+            InteractOutcome::StartDialogue(DialoguePartner::Suspicious)
+        }
         _ => InteractOutcome::Message("そこには話せる相手がいない。".into()),
     }
 }

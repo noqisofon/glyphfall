@@ -1,13 +1,13 @@
-use bevy::prelude::*;
+use super::{
+    palette, BattleMonsterTextNode, MessageHighlightNode, MessageTextNode, MessageUnderlineNode,
+    TypewriterMessage,
+};
 use crate::{
     battle::BattleStateRes,
     town::{DialogueLearnStage, LearnableSpan},
     ActiveDialogue, AppMode, ShowMessage,
 };
-use super::{
-    palette, BattleMonsterTextNode, MessageHighlightNode, MessageTextNode,
-    MessageUnderlineNode, TypewriterMessage,
-};
+use bevy::prelude::*;
 
 pub fn typewriter_tick(
     time: Res<Time>,
@@ -75,13 +75,16 @@ pub fn dialogue_underline_tick(
         (With<MessageHighlightNode>, Without<MessageUnderlineNode>),
     >,
 ) {
-    let (Ok(mut underline_text), Ok(mut highlight_text)) =
-        (underline_query.get_single_mut(), highlight_query.get_single_mut())
-    else {
+    let (Ok(mut underline_text), Ok(mut highlight_text)) = (
+        underline_query.get_single_mut(),
+        highlight_query.get_single_mut(),
+    ) else {
         return;
     };
 
-    let session = (*mode == AppMode::Dialogue).then(|| dialogue_res.0.as_ref()).flatten();
+    let session = (*mode == AppMode::Dialogue)
+        .then(|| dialogue_res.0.as_ref())
+        .flatten();
     let Some(session) = session else {
         *underline_text = Text::new("");
         *highlight_text = Text::new("");
@@ -94,7 +97,10 @@ pub fn dialogue_underline_tick(
         .unwrap_or(false);
 
     if fully_shown && !session.learnable_spans.is_empty() {
-        *underline_text = Text::new(build_underline_text(&session.current_text, &session.learnable_spans));
+        *underline_text = Text::new(build_underline_text(
+            &session.current_text,
+            &session.learnable_spans,
+        ));
     } else {
         *underline_text = Text::new("");
     }

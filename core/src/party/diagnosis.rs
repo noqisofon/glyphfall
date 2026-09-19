@@ -1,5 +1,5 @@
+use super::influence::{MentalState, PartyMember, Personality};
 use rand::Rng;
-use super::influence::{PartyMember, Personality, MentalState};
 
 /// 主人公（パンピー）の観察・判定スキル
 #[derive(Debug, Clone, Copy)]
@@ -69,7 +69,9 @@ pub fn diagnose_member<R: Rng>(
                 DiagnosisReport {
                     success: false,
                     observation_msg: obs,
-                    conclusion_msg: "あなたに熱烈な信頼を寄せているように見える。特に不審な点はない。".to_string(),
+                    conclusion_msg:
+                        "あなたに熱烈な信頼を寄せているように見える。特に不審な点はない。"
+                            .to_string(),
                 }
             }
         }
@@ -91,7 +93,8 @@ pub fn diagnose_member<R: Rng>(
                 DiagnosisReport {
                     success: false,
                     observation_msg: obs,
-                    conclusion_msg: "単に旅の疲労か、虫刺されを気にしているだけのようだ。".to_string(),
+                    conclusion_msg: "単に旅の疲労か、虫刺されを気にしているだけのようだ。"
+                        .to_string(),
                 }
             }
         }
@@ -120,7 +123,8 @@ pub fn diagnose_member<R: Rng>(
                 DiagnosisReport {
                     success: false,
                     observation_msg: obs,
-                    conclusion_msg: "あなたをとても大切に想ってくれているようだ。頼もしい仲間だ。".to_string(),
+                    conclusion_msg: "あなたをとても大切に想ってくれているようだ。頼もしい仲間だ。"
+                        .to_string(),
                 }
             }
         }
