@@ -34,11 +34,23 @@ pub enum AppMode {
 }
 
 /// 街道口に接触してから移動姿勢が確定するまでの間、行き先を保持しておくための状態。
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct TravelState {
     pub sim: Option<TravelSimulation>,
     pub destination: AreaId,
     pub spawn_pos: Position,
+    pub step_timer: Timer,
+}
+
+impl Default for TravelState {
+    fn default() -> Self {
+        Self {
+            sim: None,
+            destination: AreaId::default(),
+            spawn_pos: Position::default(),
+            step_timer: Timer::new(std::time::Duration::from_millis(800), TimerMode::Repeating),
+        }
+    }
 }
 
 pub fn in_mode(target: AppMode) -> impl Fn(Res<AppMode>) -> bool {

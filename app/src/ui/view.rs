@@ -242,7 +242,7 @@ pub fn format_status_header(
                             .push_str("操作: [1]徒歩(0G) | [2]馬(40G) | [3]馬車(80G) | [Esc]戻る");
                     }
                     TravelPhase::Traveling => {
-                        header.push_str("操作: [Space/Enter]次の日へ進む");
+                        header.push_str("操作: [自動進行中] (または [Space/Enter]で早送り)");
                     }
                     TravelPhase::EncounterEvent => {
                         header.push_str("操作: [Space/Enter]突発事象に対応する");
@@ -464,7 +464,7 @@ pub fn format_right_window(
             BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),
             BattlePhase::Defeat => "[B]街へ帰還\n\n(敗北)".into(),
         },
-        AppMode::Travel => "[1-3]選択\n[Space]進む\n[Esc]戻る".into(),
+        AppMode::Travel => "[1-3]選択\n[Space]早送\n[Esc]戻る".into(),
     }
 }
 
@@ -526,19 +526,22 @@ pub fn format_travel_center_display(travel: &TravelState, inv: &PlayerInventory)
             )
         }
         TravelPhase::Traveling => {
+            let max_logs = 4;
+            let start = sim.log_history.len().saturating_sub(max_logs);
+            let logs_str = sim.log_history[start..].join("\n");
+
             format!(
-                "【 街道の道行 - 第 {} 日目 / 全 {} 日 】\n\
-                 目的地: {} ｜ 手段: {} ｜ 姿勢: {}\n\
-                 ──────────────────────────────────────────\n\n\
-                 {}\n\n\
+                "【 街道の道行 - 第 {}/{} 日 】 目的地: {} ｜ 手段: {} ｜ 姿勢: {}\n\
                  ──────────────────────────────────────────\n\
-                 [Space / Enter] 次の日へ進む",
+                 {}\n\
+                 ──────────────────────────────────────────\n\
+                 [自動進行中...] （または [Space / Enter] で早送り）",
                 sim.current_day,
                 sim.total_days,
                 sim.plan.destination.name(),
                 sim.plan.transport.label(),
                 sim.plan.posture.label(),
-                sim.current_message
+                logs_str
             )
         }
         TravelPhase::EncounterEvent => {
@@ -554,9 +557,30 @@ pub fn format_travel_center_display(travel: &TravelState, inv: &PlayerInventory)
                 _ => "[Space / Enter] 事態を切り抜けて旅を続ける",
             };
 
+            let prior_logs: Vec<&String> = sim
+                .log_history
+                .iter()
+                .filter(|s| !s.contains("突発事態が発生"))
+                .collect();
+            let max_logs = 2;
+            let start = prior_logs.len().saturating_sub(max_logs);
+            let logs_str = if prior_logs.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "{}\n──────────────────────────────────────────\n",
+                    prior_logs[start..]
+                        .iter()
+                        .map(|s| (*s).as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            };
+
             format!(
-                "【 街道の突発事象！ - 第 {} 日目 】\n\
-                 目的地: {} ｜ 手段: {}\n\
+                "【 街道の突発事象！ - 第 {} 日目 】 目的地: {} ｜ 手段: {}\n\
+                 ──────────────────────────────────────────\n\
+                 {}\
                  ┌────────────────────────────────────────┐\n\
                  │ [!] 突発事態が発生！                    │\n\
                  │                                        │\n\
@@ -568,18 +592,36 @@ pub fn format_travel_center_display(travel: &TravelState, inv: &PlayerInventory)
                 sim.current_day,
                 sim.plan.destination.name(),
                 sim.plan.transport.label(),
+                logs_str,
                 event_msg,
                 action_hint
             )
         }
         TravelPhase::Arrived => {
+            let scenery_logs: Vec<&String> = sim
+                .log_history
+                .iter()
+                .filter(|s| !s.starts_with("【到着】"))
+                .collect();
+            let max_logs = 4;
+            let start = scenery_logs.len().saturating_sub(max_logs);
+            let logs_str = scenery_logs[start..]
+                .iter()
+                .map(|s| (*s).as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+
             format!(
-                "【 街道踏破 - 目的地到着 】\n\n\
+                "【 街道の道行 - 旅程踏破 】 目的地: {} ｜ 手段: {} ｜ 姿勢: {}\n\
+                 ──────────────────────────────────────────\n\
+                 {}\n\
                  ==========================================\n\
-                 {}日間の旅路を終え、{}に無事到着した！\n\
-                 前方に目的地の集落が広がり、人々の生活の音が聞こえる。\n\
-                 ==========================================\n\n\
+                 【到着】{}日間の旅路を終え、{}に無事到着した！\n\
                  [Space / Enter] エリアに入る",
+                sim.plan.destination.name(),
+                sim.plan.transport.label(),
+                sim.plan.posture.label(),
+                logs_str,
                 sim.total_days,
                 sim.plan.destination.name()
             )

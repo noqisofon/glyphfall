@@ -415,6 +415,7 @@ pub fn handle_inn_input(
 #[allow(clippy::too_many_arguments)]
 pub fn handle_travel_input(
     keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     mut mode: ResMut<AppMode>,
     mut town: ResMut<TownStateRes>,
     mut travel_state: ResMut<TravelState>,
@@ -430,9 +431,14 @@ pub fn handle_travel_input(
     let spawn_pos = travel_state.spawn_pos;
     let from_area = town.current_area;
 
-    let sim = travel_state
-        .sim
-        .get_or_insert_with(|| TravelSimulation::new(from_area, destination, spawn_pos));
+    let travel = &mut *travel_state;
+    if travel.sim.is_none() {
+        travel.sim = Some(TravelSimulation::new(from_area, destination, spawn_pos));
+    }
+    let timer = &mut travel.step_timer;
+    let sim = travel.sim.as_mut().unwrap();
+
+    let mut reset_sim = false;
 
     match sim.phase {
         TravelPhase::ChoosingDestination => {
@@ -445,7 +451,7 @@ pub fn handle_travel_input(
                 )));
             } else if keyboard.just_pressed(KeyCode::Escape) {
                 *mode = AppMode::Town;
-                travel_state.sim = None;
+                reset_sim = true;
                 msg_events.send(ShowMessage("街道を進むのをやめた。".into()));
             }
         }
@@ -470,7 +476,7 @@ pub fn handle_travel_input(
             } else if keyboard.just_pressed(KeyCode::Escape) {
                 if !sim.back_phase() {
                     *mode = AppMode::Town;
-                    travel_state.sim = None;
+                    reset_sim = true;
                     msg_events.send(ShowMessage("街道を進むのをやめた。".into()));
                 } else {
                     msg_events.send(ShowMessage("移動先の選択に戻った。".into()));
@@ -501,6 +507,7 @@ pub fn handle_travel_input(
                         inv.spend_gold(cost);
                     }
                     sim.select_transport(transport);
+                    timer.reset();
                     let start_msg = sim.start_travel();
                     msg_events.send(ShowMessage(start_msg));
                 }
@@ -510,8 +517,14 @@ pub fn handle_travel_input(
             }
         }
         TravelPhase::Traveling => {
-            // [Space] または [Enter]: 1日進める
-            if keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter) {
+            // タイマー自動進行（イベントがなければ自動で進む） ＆ [Space]/[Enter]手動送り
+            timer.tick(time.delta());
+            let manual_advance =
+                keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter);
+            let timer_advance = timer.just_finished();
+
+            if manual_advance || timer_advance {
+                timer.reset();
                 let outcome = sim.advance_day(&event_registry, &mut event_history, &mut rng);
                 match outcome {
                     TravelStepOutcome::Continued { message, .. } => {
@@ -538,7 +551,7 @@ pub fn handle_travel_input(
                         town.switch_area(dest, spawn, &mut rng);
                         *mode = AppMode::Battle;
                         dialogue_res.0 = None;
-                        travel_state.sim = None;
+                        reset_sim = true;
                         msg_events.send(ShowMessage(
                             "魔物・山賊が襲いかかってきた！ 武器を構えろ！".into(),
                         ));
@@ -568,13 +581,17 @@ pub fn handle_travel_input(
                 let spawn = sim.spawn_pos;
                 town.switch_area(dest, spawn, &mut rng);
                 *mode = AppMode::Town;
-                travel_state.sim = None;
+                reset_sim = true;
                 msg_events.send(ShowMessage(format!(
                     "{}に到着した。\n[WASD]で歩き回れる。",
                     dest.name()
                 )));
             }
         }
+    }
+
+    if reset_sim {
+        travel_state.sim = None;
     }
 }
 
@@ -588,6 +605,7 @@ mod tests {
     fn create_test_travel_app() -> App {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<Time>();
         app.insert_resource(AppMode::Travel);
         app.insert_resource(TownStateRes {
             state: TownState::new(),
@@ -601,6 +619,7 @@ mod tests {
             )),
             destination: AreaId::Village,
             spawn_pos: Position { x: 20, y: 5 },
+            step_timer: Timer::new(std::time::Duration::from_millis(800), TimerMode::Repeating),
         };
         app.insert_resource(travel_state);
         let inv = PlayerInventory {
@@ -729,5 +748,69 @@ mod tests {
         let travel = app.world().resource::<TravelState>();
         let sim = travel.sim.as_ref().unwrap();
         assert_eq!(sim.phase, TravelPhase::ChoosingTransport);
+    }
+
+    #[test]
+    fn test_travel_automatic_timer_advancement_without_key_press() {
+        let mut app = create_test_travel_app();
+
+        // 旅計画: 徒歩で出発 (所要3日)
+        press_key(&mut app, KeyCode::Digit1); // すずかけ村
+        press_key(&mut app, KeyCode::Digit2); // 普通に
+        press_key(&mut app, KeyCode::Digit1); // 徒歩 (0G)
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Traveling);
+            assert_eq!(sim.current_day, 1);
+            assert_eq!(sim.total_days, 3);
+        }
+
+        // キーを押さず、時間を0.8秒進める -> Day 1 から Day 2 へ自動進行
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_millis(800));
+        app.update();
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Traveling);
+            assert_eq!(sim.current_day, 2);
+        }
+
+        // さらに0.8秒進める -> Day 2 から Day 3 へ自動進行
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_millis(800));
+        app.update();
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Traveling);
+            assert_eq!(sim.current_day, 3);
+        }
+
+        // さらに0.8秒進める -> 踏破して Arrived に自動遷移（ここで止まる）
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_millis(800));
+        app.update();
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Arrived);
+
+            let inv = app.world().resource::<PlayerInventoryRes>();
+            let center_display = crate::ui::format_travel_center_display(travel, inv);
+            // 旅が終わるまでメッセージログ（第1日目〜第3日目、および到着メッセージ）が画面に残っていること
+            assert!(center_display.contains("第1日目"));
+            assert!(center_display.contains("第2日目"));
+            assert!(center_display.contains("第3日目"));
+            assert!(center_display.contains("無事到着した"));
+        }
     }
 }
