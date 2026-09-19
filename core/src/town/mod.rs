@@ -4,6 +4,7 @@ pub mod fov;
 pub mod interact;
 pub mod map;
 pub mod movement;
+pub mod travel;
 
 pub use dialogue::{
     DialogueLearnStage, DialoguePartner, DialogueSession, LearnableSpan, INN_COST, SHOP_ITEMS,
@@ -12,6 +13,7 @@ pub use fov::FovMap;
 pub use interact::{CommandKind, InteractOutcome, TargetKind};
 pub use map::{AreaId, TileType, TownMap};
 pub use movement::{try_move_player, Facing, FollowerHistory, MoveOutcome, Position};
+pub use travel::*;
 
 /// 街・迷宮の探索状態（ADR-0006/0010ほか）。
 ///

@@ -1,5 +1,6 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AreaId {
+    #[default]
     Town,
     DungeonB1F,
     DungeonB2F,

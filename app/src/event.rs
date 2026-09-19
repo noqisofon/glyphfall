@@ -2,7 +2,7 @@
 
 use crate::macros::newtype_resource;
 
-pub use glyphfall_core::event::{try_trigger_sudden_event, SuddenEventCategory};
+pub use glyphfall_core::event::SuddenEventCategory;
 
 newtype_resource!(
     SuddenEventRegistryRes,

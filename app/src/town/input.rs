@@ -1,16 +1,12 @@
 use super::{
     CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
-    MoveOutcome, TownStateRes, SHOP_ITEMS,
+    MoveOutcome, TownStateRes, TravelPhase, TravelPosture, TravelSimulation, TravelStepOutcome,
+    TravelTransport, SHOP_ITEMS,
 };
-use crate::event::{
-    try_trigger_sudden_event, SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes,
-};
+use crate::event::{SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes};
 use crate::party::{PlayerInventoryRes, CURRENCY_UNIT};
 use crate::ActiveDialogue;
-use crate::{
-    AppMode, CommandMenuStage, CommandMenuState, PartyStateRes, ShowMessage, TravelPosture,
-    TravelState,
-};
+use crate::{AppMode, CommandMenuStage, CommandMenuState, PartyStateRes, ShowMessage, TravelState};
 use bevy::prelude::*;
 use rand::thread_rng;
 
@@ -76,11 +72,13 @@ pub fn handle_town_input(
                 destination,
                 spawn_pos,
             } => {
+                let from_area = town.current_area;
                 travel_state.destination = destination;
                 travel_state.spawn_pos = spawn_pos;
+                travel_state.sim = Some(TravelSimulation::new(from_area, destination, spawn_pos));
                 *mode = AppMode::Travel;
                 msg_events.send(ShowMessage(format!(
-                    "{}へ続く街道だ。どのように進みますか？\n[1]慎重に [2]普通に [3]大胆に（[Esc]でやめる）",
+                    "{}へ続く街道口に立った。\n旅の計画を立ててください。",
                     destination.name()
                 )));
             }
@@ -419,61 +417,317 @@ pub fn handle_travel_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mode: ResMut<AppMode>,
     mut town: ResMut<TownStateRes>,
-    travel_state: Res<TravelState>,
+    mut travel_state: ResMut<TravelState>,
+    mut inv: ResMut<PlayerInventoryRes>,
     event_registry: Res<SuddenEventRegistryRes>,
     mut event_history: ResMut<SuddenEventHistoryRes>,
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
-    // ADR-0004: 移動姿勢（慎重に／普通に／大胆に）を選択し、旅シミュレーションを実行する。
-    // ADR-0013の発生エンジンで道中の突発イベントを2段階抽選する。
-    let posture = if keyboard.just_pressed(KeyCode::Digit1) {
-        Some(TravelPosture::Cautious)
-    } else if keyboard.just_pressed(KeyCode::Digit2) {
-        Some(TravelPosture::Normal)
-    } else if keyboard.just_pressed(KeyCode::Digit3) {
-        Some(TravelPosture::Bold)
-    } else {
-        None
-    };
+    let mut rng = thread_rng();
 
-    if let Some(posture) = posture {
-        let mut rng = thread_rng();
-        let triggered = try_trigger_sudden_event(
-            &event_registry,
-            &mut event_history,
-            posture.base_probability(),
-            &mut rng,
-        );
+    let destination = travel_state.destination;
+    let spawn_pos = travel_state.spawn_pos;
+    let from_area = town.current_area;
 
-        let destination = travel_state.destination;
-        let spawn_pos = travel_state.spawn_pos;
+    let sim = travel_state
+        .sim
+        .get_or_insert_with(|| TravelSimulation::new(from_area, destination, spawn_pos));
 
-        let mut msg = format!(
-            "{}進み、{}へ向かった。\n",
-            posture.label(),
-            destination.name()
-        );
-        match triggered {
-            Some(evt) => msg.push_str(evt.message),
-            None => msg.push_str("道中、特に何も起こらなかった。"),
-        }
-
-        town.switch_area(destination, spawn_pos, &mut rng);
-
-        match triggered.map(|evt| evt.category) {
-            Some(SuddenEventCategory::Bandit) | Some(SuddenEventCategory::WildAnimal) => {
-                *mode = AppMode::Battle;
-                dialogue_res.0 = None;
-            }
-            _ => {
+    match sim.phase {
+        TravelPhase::ChoosingDestination => {
+            // [1] または [Enter]: すずかけ村を選択して移動姿勢選択へ
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                sim.select_destination(destination, spawn_pos);
+                msg_events.send(ShowMessage(format!(
+                    "{}へ向かう旅を計画します。\n移動姿勢を選択してください。",
+                    destination.name()
+                )));
+            } else if keyboard.just_pressed(KeyCode::Escape) {
                 *mode = AppMode::Town;
+                travel_state.sim = None;
+                msg_events.send(ShowMessage("街道を進むのをやめた。".into()));
             }
         }
+        TravelPhase::ChoosingPosture => {
+            // [1] 慎重に, [2] 普通に, [3] 大胆に
+            let posture = if keyboard.just_pressed(KeyCode::Digit1) {
+                Some(TravelPosture::Cautious)
+            } else if keyboard.just_pressed(KeyCode::Digit2) {
+                Some(TravelPosture::Normal)
+            } else if keyboard.just_pressed(KeyCode::Digit3) {
+                Some(TravelPosture::Bold)
+            } else {
+                None
+            };
 
-        msg_events.send(ShowMessage(msg));
-    } else if keyboard.just_pressed(KeyCode::Escape) {
-        *mode = AppMode::Town;
-        msg_events.send(ShowMessage("街道を進むのをやめた。".into()));
+            if let Some(posture) = posture {
+                sim.select_posture(posture);
+                msg_events.send(ShowMessage(format!(
+                    "移動姿勢を「{}」に決定した。\n次に移動手段を選択してください。",
+                    posture.label()
+                )));
+            } else if keyboard.just_pressed(KeyCode::Escape) {
+                if !sim.back_phase() {
+                    *mode = AppMode::Town;
+                    travel_state.sim = None;
+                    msg_events.send(ShowMessage("街道を進むのをやめた。".into()));
+                } else {
+                    msg_events.send(ShowMessage("移動先の選択に戻った。".into()));
+                }
+            }
+        }
+        TravelPhase::ChoosingTransport => {
+            // [1] 徒歩 (0G), [2] 馬 (40G), [3] 馬車 (80G)
+            let transport = if keyboard.just_pressed(KeyCode::Digit1) {
+                Some(TravelTransport::Foot)
+            } else if keyboard.just_pressed(KeyCode::Digit2) {
+                Some(TravelTransport::Horse)
+            } else if keyboard.just_pressed(KeyCode::Digit3) {
+                Some(TravelTransport::Carriage)
+            } else {
+                None
+            };
+
+            if let Some(transport) = transport {
+                let cost = transport.cost();
+                if inv.gold < cost {
+                    msg_events.send(ShowMessage(format!(
+                        "所持金が足りません！（必要: {}{}, 所持: {}{}）",
+                        cost, CURRENCY_UNIT, inv.gold, CURRENCY_UNIT
+                    )));
+                } else {
+                    if cost > 0 {
+                        inv.spend_gold(cost);
+                    }
+                    sim.select_transport(transport);
+                    let start_msg = sim.start_travel();
+                    msg_events.send(ShowMessage(start_msg));
+                }
+            } else if keyboard.just_pressed(KeyCode::Escape) {
+                sim.back_phase();
+                msg_events.send(ShowMessage("移動姿勢の選択に戻った。".into()));
+            }
+        }
+        TravelPhase::Traveling => {
+            // [Space] または [Enter]: 1日進める
+            if keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter) {
+                let outcome = sim.advance_day(&event_registry, &mut event_history, &mut rng);
+                match outcome {
+                    TravelStepOutcome::Continued { message, .. } => {
+                        msg_events.send(ShowMessage(message));
+                    }
+                    TravelStepOutcome::EventOccurred { message, .. } => {
+                        msg_events.send(ShowMessage(message));
+                    }
+                    TravelStepOutcome::Arrived { message, .. } => {
+                        msg_events.send(ShowMessage(message));
+                    }
+                }
+            }
+        }
+        TravelPhase::EncounterEvent => {
+            // [Space] または [Enter]: イベント解決 / 戦闘突入
+            if keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter) {
+                let category = sim.pending_event.as_ref().map(|e| e.category);
+                match category {
+                    Some(SuddenEventCategory::Bandit) | Some(SuddenEventCategory::WildAnimal) => {
+                        // 目的地の街へ切り替えてから戦闘へ突入
+                        let dest = sim.plan.destination;
+                        let spawn = sim.spawn_pos;
+                        town.switch_area(dest, spawn, &mut rng);
+                        *mode = AppMode::Battle;
+                        dialogue_res.0 = None;
+                        travel_state.sim = None;
+                        msg_events.send(ShowMessage(
+                            "魔物・山賊が襲いかかってきた！ 武器を構えろ！".into(),
+                        ));
+                    }
+                    _ => {
+                        // その他のイベントを解決して旅程再開
+                        let outcome = sim.resolve_event_and_continue();
+                        match outcome {
+                            TravelStepOutcome::Continued { message, .. } => {
+                                msg_events.send(ShowMessage(message));
+                            }
+                            TravelStepOutcome::Arrived { message, .. } => {
+                                msg_events.send(ShowMessage(message));
+                            }
+                            TravelStepOutcome::EventOccurred { message, .. } => {
+                                msg_events.send(ShowMessage(message));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        TravelPhase::Arrived => {
+            // [Space] または [Enter]: 目的地エリアへ切り替えて探索復帰
+            if keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::Enter) {
+                let dest = sim.plan.destination;
+                let spawn = sim.spawn_pos;
+                town.switch_area(dest, spawn, &mut rng);
+                *mode = AppMode::Town;
+                travel_state.sim = None;
+                msg_events.send(ShowMessage(format!(
+                    "{}に到着した。\n[WASD]で歩き回れる。",
+                    dest.name()
+                )));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::party::PlayerInventory;
+    use crate::town::{AreaId, TownState};
+    use crate::Position;
+
+    fn create_test_travel_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.insert_resource(AppMode::Travel);
+        app.insert_resource(TownStateRes {
+            state: TownState::new(),
+            texture_handle: Handle::default(),
+        });
+        let travel_state = TravelState {
+            sim: Some(TravelSimulation::new(
+                AreaId::Town,
+                AreaId::Village,
+                Position { x: 20, y: 5 },
+            )),
+            destination: AreaId::Village,
+            spawn_pos: Position { x: 20, y: 5 },
+        };
+        app.insert_resource(travel_state);
+        let inv = PlayerInventory {
+            gold: 100,
+            ..Default::default()
+        };
+        app.insert_resource(PlayerInventoryRes(inv));
+        // イベント抽選をスキップさせるため空のレジストリを用意
+        app.insert_resource(SuddenEventRegistryRes(
+            glyphfall_core::event::SuddenEventRegistry { events: Vec::new() },
+        ));
+        app.init_resource::<SuddenEventHistoryRes>();
+        app.insert_resource(ActiveDialogue(None));
+        app.add_event::<ShowMessage>();
+        app.add_systems(Update, handle_travel_input);
+        app
+    }
+
+    fn press_key(app: &mut App, key: KeyCode) {
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(key);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+    }
+
+    #[test]
+    fn test_travel_cancellation_at_destination_step() {
+        let mut app = create_test_travel_app();
+
+        // Esc キーを押して計画をキャンセル
+        press_key(&mut app, KeyCode::Escape);
+
+        assert_eq!(*app.world().resource::<AppMode>(), AppMode::Town);
+        assert!(app.world().resource::<TravelState>().sim.is_none());
+    }
+
+    #[test]
+    fn test_travel_three_step_planning_and_arrival_flow() {
+        let mut app = create_test_travel_app();
+
+        // Step 1: 移動先選択 ([1] すずかけ村)
+        press_key(&mut app, KeyCode::Digit1);
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::ChoosingPosture);
+        }
+
+        // Step 2: 移動姿勢選択 ([2] 普通に)
+        press_key(&mut app, KeyCode::Digit2);
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::ChoosingTransport);
+            assert_eq!(sim.plan.posture, TravelPosture::Normal);
+        }
+
+        // Step 3: 移動手段選択 ([3] 乗合馬車, 費用80G)
+        press_key(&mut app, KeyCode::Digit3);
+
+        {
+            let inv = app.world().resource::<PlayerInventoryRes>();
+            assert_eq!(inv.gold, 20); // 100 - 80 = 20G
+
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Traveling);
+            assert_eq!(sim.current_day, 1);
+            assert_eq!(sim.total_days, 2); // 馬車: 2日
+        }
+
+        // 旅程進行: [Space] で 1日進める (Day 1 -> Day 2)
+        press_key(&mut app, KeyCode::Space);
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Traveling);
+            assert_eq!(sim.current_day, 2);
+        }
+
+        // 旅程進行: [Space] でさらに進める (Day 2 >= Total 2 -> Arrived)
+        press_key(&mut app, KeyCode::Space);
+
+        {
+            let travel = app.world().resource::<TravelState>();
+            let sim = travel.sim.as_ref().unwrap();
+            assert_eq!(sim.phase, TravelPhase::Arrived);
+        }
+
+        // 到着確定: [Space] で村へ入る
+        press_key(&mut app, KeyCode::Space);
+
+        assert_eq!(*app.world().resource::<AppMode>(), AppMode::Town);
+        assert_eq!(
+            app.world().resource::<TownStateRes>().current_area,
+            AreaId::Village
+        );
+        assert!(app.world().resource::<TravelState>().sim.is_none());
+    }
+
+    #[test]
+    fn test_travel_transport_insufficient_funds_blocks_progress() {
+        let mut app = create_test_travel_app();
+        app.world_mut().resource_mut::<PlayerInventoryRes>().gold = 10; // 10Gしか持っていない
+
+        // Step 1: 行き先
+        press_key(&mut app, KeyCode::Digit1);
+
+        // Step 2: 姿勢
+        press_key(&mut app, KeyCode::Digit1);
+
+        // Step 3: 乗合馬車 (80G必要) を選択しようとする
+        press_key(&mut app, KeyCode::Digit3);
+
+        // 資金不足のためゴールドは消費されず、ChoosingTransport のまま
+        assert_eq!(app.world().resource::<PlayerInventoryRes>().gold, 10);
+        let travel = app.world().resource::<TravelState>();
+        let sim = travel.sim.as_ref().unwrap();
+        assert_eq!(sim.phase, TravelPhase::ChoosingTransport);
     }
 }

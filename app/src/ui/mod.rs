@@ -75,6 +75,9 @@ pub struct TownMapImageNode;
 pub struct BattleMonsterTextNode;
 
 #[derive(Component)]
+pub struct TravelSimulationTextNode;
+
+#[derive(Component)]
 pub struct PlayingRoot;
 
 #[derive(SystemParam)]
@@ -233,12 +236,32 @@ pub fn spawn_center_window(parent: &mut ChildBuilder, font: Handle<Font>, town: 
                 },
                 Text::new(""),
                 TextFont {
-                    font,
+                    font: font.clone(),
                     font_size: CELL_PX * 0.85,
                     ..default()
                 },
                 TextColor(palette::TEXT),
                 BattleMonsterTextNode,
+            ));
+
+            // 街道旅シミュレーション描画ノード（初期は非表示、中央暗転＆テキスト表示）
+            grid.spawn((
+                Node {
+                    grid_column: GridPlacement::start_span(2, outer_cols as u16 - 2),
+                    grid_row: GridPlacement::start_span(2, outer_rows as u16 - 2),
+                    padding: UiRect::all(Val::Px(10.0)),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                Text::new(""),
+                TextFont {
+                    font,
+                    font_size: CELL_PX * 0.82,
+                    ..default()
+                },
+                TextColor(palette::TEXT),
+                TravelSimulationTextNode,
             ));
         });
 }

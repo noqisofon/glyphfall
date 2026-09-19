@@ -1,7 +1,7 @@
 use super::map::{AreaId, TileType, TownMap};
 use std::collections::VecDeque;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Position {
     pub x: i32,
     pub y: i32,

@@ -15,7 +15,10 @@ pub use party::{
     Influence, MentalState, PartyMember, PartyStateRes, Personality, PlayerInventoryRes,
     PlayerResourceRes, PlayerSkills, ReserveRosterRes,
 };
-pub use town::{AreaId, CommandKind, DialogueSession, Position, TownStateRes, SHOP_ITEMS};
+pub use town::{
+    AreaId, CommandKind, DialogueSession, Position, TownStateRes, TravelPhase, TravelPlan,
+    TravelPosture, TravelSimulation, TravelStepOutcome, TravelTransport, SHOP_ITEMS,
+};
 pub use ui::palette;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
@@ -26,52 +29,16 @@ pub enum AppMode {
     Shop,
     Inn,
     Battle,
-    /// ADR-0004/ADR-0013: 街道口で移動姿勢を選択している最中。
+    /// ADR-0004/ADR-0013/ADR-0026: 街道口での旅計画および暗転旅シミュレーション中。
     Travel,
 }
 
-/// 旅シミュレーション（ADR-0004）の移動姿勢。基礎エンカウント率のみを扱う
-/// 最小実装で、移動時間短縮などのメリットは今後の課題とする。
-#[derive(Clone, Copy, Debug)]
-pub enum TravelPosture {
-    Cautious,
-    Normal,
-    Bold,
-}
-
-impl TravelPosture {
-    pub fn label(&self) -> &'static str {
-        match self {
-            TravelPosture::Cautious => "慎重に",
-            TravelPosture::Normal => "普通に",
-            TravelPosture::Bold => "大胆に",
-        }
-    }
-
-    /// ADR-0004の姿勢別エンカウント率表に対応する基礎確率。
-    pub fn base_probability(&self) -> f32 {
-        match self {
-            TravelPosture::Cautious => 0.15,
-            TravelPosture::Normal => 0.35,
-            TravelPosture::Bold => 0.65,
-        }
-    }
-}
-
 /// 街道口に接触してから移動姿勢が確定するまでの間、行き先を保持しておくための状態。
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct TravelState {
+    pub sim: Option<TravelSimulation>,
     pub destination: AreaId,
     pub spawn_pos: Position,
-}
-
-impl Default for TravelState {
-    fn default() -> Self {
-        Self {
-            destination: AreaId::Town,
-            spawn_pos: Position { x: 0, y: 0 },
-        }
-    }
 }
 
 pub fn in_mode(target: AppMode) -> impl Fn(Res<AppMode>) -> bool {
@@ -194,6 +161,7 @@ fn main() {
                     ui::update_status_header_system,
                     ui::update_tri_split_windows_system,
                     ui::update_battle_monster_display_system,
+                    ui::update_travel_simulation_display_system,
                     ui::update_center_window_visibility_system,
                 ),
             )
