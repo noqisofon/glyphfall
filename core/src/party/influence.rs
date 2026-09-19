@@ -66,6 +66,18 @@ pub enum Personality {
     Yandere,
 }
 
+impl Personality {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Personality::Player => "プレイヤー",
+            Personality::Loyal => "忠実",
+            Personality::Slacker => "遊び人",
+            Personality::Coward => "臆病",
+            Personality::Yandere => "ヤンデレ",
+        }
+    }
+}
+
 /// パーティメンバーのコンポーネント
 #[derive(Debug, Clone)]
 pub struct PartyMember {
