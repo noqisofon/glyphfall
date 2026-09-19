@@ -115,4 +115,6 @@ cargo run -p glyphfall         # ゲームを起動
 - [ADR-0023: キャラクリ「素性」システムの2軸分離（属性軸 × 旅立ちの動機軸）](docs/adr/0023-origin-motive-two-axis-split.md)
 - [ADR-0024: 街道（旅シミュ）と地下迷宮のハイブリッドエンカウント方式の採用](docs/adr/0024-hybrid-encounter-and-fixed-monster-symbol.md)
 - [ADR-0025: 難易度設定を「世界観プリセット」として再解釈する二層構造の採用 (Proposed)](docs/adr/0025-difficulty-as-worldview-preset.md)
+- [ADR-0026: 街道旅シミュレーションの暗転演出と3段階旅計画（移動先×姿勢×手段）の採用 (Proposed)](docs/adr/0026-travel-simulation-dark-screen-and-three-step-planning.md)
+
 

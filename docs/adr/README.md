@@ -28,10 +28,11 @@
 | [ADR-0019](0019-forin-currency-rename.md) | ゲーム内通貨名を「フォリン」に変更 | Accepted | 2026-09-16 |
 | [ADR-0020](0020-knowledge-system-and-lua-mod-support.md) | 話題ウィンドウの語彙拡張とMOD向けLuaスクリプト対応 | Accepted | 2026-09-16 |
 | [ADR-0021](0021-dungeon-multi-floor-descent.md) | 封魔の地下迷宮の複数階層化（B1F〜B6F） | Accepted | 2026-09-16 |
-| [ADR-0022](0022-origin-based-game-start.md) | 素性（出自）システムによるゲーム開始パターンの統一 | Proposed | 2026-09-17 |
-| [ADR-0023](0023-origin-motive-two-axis-split.md) | キャラクリ「素性」システムの2軸分離（属性軸 × 旅立ちの動機軸） | Proposed | 2026-09-17 |
+| [ADR-0022](0022-origin-based-game-start.md) | 素性（出自）システムによるゲーム開始パターンの統一 | Accepted | 2026-09-17 |
+| [ADR-0023](0023-origin-motive-two-axis-split.md) | キャラクリ「素性」システムの2軸分離（属性軸 × 旅立ちの動機軸） | Accepted | 2026-09-17 |
 | [ADR-0024](0024-hybrid-encounter-and-fixed-monster-symbol.md) | 街道（旅シミュ）と地下迷宮のハイブリッドエンカウント方式の採用 | Accepted | 2026-09-17 |
 | [ADR-0025](0025-difficulty-as-worldview-preset.md) | 難易度設定を「世界観プリセット」として再解釈する二層構造の採用 | Proposed | 2026-09-18 |
+| [ADR-0026](0026-travel-simulation-dark-screen-and-three-step-planning.md) | 街道旅シミュレーションの暗転演出と3段階旅計画（移動先×姿勢×手段）の採用 | Proposed | 2026-09-19 |
 
  
 ## フォーマットについて
