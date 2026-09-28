@@ -34,6 +34,7 @@
 | [ADR-0025](0025-difficulty-as-worldview-preset.md) | 難易度設定を「世界観プリセット」として再解釈する二層構造の採用 | Proposed | 2026-09-18 |
 | [ADR-0026](0026-travel-simulation-dark-screen-and-three-step-planning.md) | 街道旅シミュレーションの暗転演出と3段階旅計画（移動先×姿勢×手段）の採用 | Proposed | 2026-09-19 |
 | [ADR-0027](0027-world-settings-preset-hierarchy-and-diff-storage.md) | 世界設定パラメータをプリセット階層＋差分保存方式で管理する | Proposed | 2026-09-25 |
+| [ADR-0028](0028-noun-first-query-and-knowledge-pointer.md) | 名詞先行型「たずねる」対話システムと知識ポインタ・社会的障壁 | Proposed | 2026-09-28 |
 
  
 ## フォーマットについて

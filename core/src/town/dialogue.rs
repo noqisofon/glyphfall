@@ -3,6 +3,72 @@ use crate::party::{PartyMember, PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 /// 宿屋の一泊あたりの宿泊費用（フォリン）
 pub const INN_COST: i32 = 50;
 
+/// 話題ノードの種別（ADR-0028）
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TopicKind {
+    Entity,    // 魔物・事物（マンティコア）
+    Attribute, // 属性（弱点、生態）
+    Person,    // 人物・組織（★★騎士団、団長）
+    Location,  // 場所・地名（トリポリ、◇◇砦）
+}
+
+/// たずねる対象（話題ノード or 文脈代名詞。ADR-0028）
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QuerySubject {
+    /// 手帳にストックされた話題
+    Topic { name: String, kind: TopicKind },
+    /// 文脈トークン: 現在地（「ここ」）
+    Here,
+    /// 文脈トークン: 話し相手（「あなた」）
+    You,
+    /// 文脈トークン: プレイヤー自身（「私」）
+    Me,
+}
+
+/// 聞き方（純粋な疑問詞のみ。ADR-0028）
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuestionType {
+    What,      // 「何？」：定義・生態・客観的事実
+    Where,     // 「どこ？」：所在・方角・所要日数
+    DoYouKnow, // 「知っている？」：関係性・世間の評判・警戒感
+    Who,       // 「誰？」：素性（あなた）または評判（私）
+}
+
+/// 謁見・面会の社会的障壁（静的データ。ADR-0028）
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AccessBarrier {
+    /// 第三者が発行した書類・アイテムが必要（例: 紹介状、通行証）
+    RequiresItem(String),
+    /// 地域・組織の評判が必要（影響度とは別軸の顔見知り度）
+    RequiresReputation { faction: String, min_reputation: i32 },
+}
+
+/// 知識に対するNPCの返答（MVP第1段階。ADR-0028）
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KnowledgeResponse {
+    /// 1. 完全に知らない（「知らんな」）
+    Unknown,
+    /// 2. 知らないが、誰に聞けばいいか知っている（ポインタ＋社会的障壁）
+    /// 人物や地名は自動開示されず、本文中の下線対象として提示される
+    Pointer {
+        text: String,
+        barrier: Option<AccessBarrier>,
+    },
+    /// 3. 知識そのものを答える
+    Answer {
+        text: String,
+    },
+}
+
+/// 新人判定のタイミング（ADR-0028）
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum NewbieJudgment {
+    #[default]
+    None,
+    Before, // 警戒先行型（関所番人）
+    After,  // 世話焼き先行型（呑兵衛等）
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DialoguePartner {
     Inn,
@@ -11,6 +77,8 @@ pub enum DialoguePartner {
     Guard,
     Villager,
     Suspicious,
+    CheckpointGuard, // マンティコア関所の番人
+    KnightCommander, // ★★騎士団団長
 }
 
 impl DialoguePartner {
@@ -22,6 +90,16 @@ impl DialoguePartner {
             DialoguePartner::Guard => "王都衛兵",
             DialoguePartner::Villager => "街の女性",
             DialoguePartner::Suspicious => "裏通りの怪しい男",
+            DialoguePartner::CheckpointGuard => "関所の番人",
+            DialoguePartner::KnightCommander => "騎士団団長",
+        }
+    }
+
+    pub fn newbie_judgment(&self) -> NewbieJudgment {
+        match self {
+            DialoguePartner::CheckpointGuard => NewbieJudgment::Before,
+            DialoguePartner::Tavern => NewbieJudgment::After,
+            _ => NewbieJudgment::None,
         }
     }
 }
@@ -100,9 +178,24 @@ fn spans_for(text: &str, words: &[&str]) -> Vec<LearnableSpan> {
         }
     }
 
-    // 本文中の出現位置順（start昇順）にソート
-    spans.sort_by_key(|s| s.start);
-    spans
+    // 出現位置順（start昇順、同じ位置なら長さ降順）にソート
+    spans.sort_by(|a, b| {
+        a.start
+            .cmp(&b.start)
+            .then_with(|| (b.end - b.start).cmp(&(a.end - a.start)))
+    });
+
+    // より長いスパンに内包される短いスパンを除外（重なり防止）
+    let mut filtered: Vec<LearnableSpan> = Vec::new();
+    for span in spans {
+        if !filtered
+            .iter()
+            .any(|f| span.start >= f.start && span.end <= f.end)
+        {
+            filtered.push(span);
+        }
+    }
+    filtered
 }
 
 /// 「おぼえる」コマンドの進行段階（ADR-0011の`CommandMenuStage`と同様の2段階パターン）。
@@ -154,6 +247,20 @@ impl DialogueSession {
             DialoguePartner::Suspicious => (
                 "怪しい男「ヒヒッ…あんた、裏の事情に首を突っ込みたいのかい？\nいい情報を持ってるぜ…」".into(),
                 Vec::new(),
+            ),
+            DialoguePartner::CheckpointGuard => (
+                "番人「知っての通り、この先はマンティコアの生息地域だ。この先は通れんよ」".into(),
+                spans_for(
+                    "番人「知っての通り、この先はマンティコアの生息地域だ。この先は通れんよ」",
+                    &["マンティコア", "この先"],
+                ),
+            ),
+            DialoguePartner::KnightCommander => (
+                "団長「私が★★騎士団の団長だ。貴公に何用か？」".into(),
+                spans_for(
+                    "団長「私が★★騎士団の団長だ。貴公に何用か？」",
+                    &["★★騎士団"],
+                ),
             ),
         };
 
@@ -257,6 +364,160 @@ impl DialogueSession {
                 self.learnable_spans = Vec::new();
             }
         }
+    }
+
+    /// 名詞先行型「たずねる」コマンド（ADR-0028）
+    /// subject: 対象（話題ノードまたは文脈トークン）
+    /// attribute: 属性（"弱点" 等の話題語句。省略可）
+    /// question: 疑問詞（What/Where/DoYouKnow/Who）
+    /// current_location: 現在地名（例: "マンティコア関所", "王都アルカン", "トリポリ"）
+    /// inventory: プレイヤー所持品（社会的障壁判定用）
+    pub fn ask_query(
+        &mut self,
+        subject: &QuerySubject,
+        attribute: Option<&str>,
+        question: QuestionType,
+        current_location: &str,
+        inventory: Option<&PlayerInventory>,
+    ) -> KnowledgeResponse {
+        self.learn_stage = DialogueLearnStage::Talking;
+
+        let response = match (self.partner, subject, attribute, question) {
+            // --- 1. 文脈トークン: 「ここ」 ---
+            (_, QuerySubject::Here, None, QuestionType::Where) => {
+                match self.partner {
+                    DialoguePartner::CheckpointGuard => KnowledgeResponse::Answer {
+                        text: "番人「ここはマンティコア関所だ。東へ進めばトリポリだが、この先は通れんよ」".into(),
+                    },
+                    DialoguePartner::Villager => KnowledgeResponse::Answer {
+                        text: format!("街の女性「ようこそ、旅の人。ここは{}です」", current_location),
+                    },
+                    DialoguePartner::Guard => KnowledgeResponse::Answer {
+                        text: format!("王都衛兵「ここは{}だ。怪しい行動は慎むようにな」", current_location),
+                    },
+                    _ => KnowledgeResponse::Answer {
+                        text: format!("{}「ここは{}だな」", self.partner.name(), current_location),
+                    },
+                }
+            }
+
+            // --- 2. 文脈トークン: 「あなた」 ---
+            (_, QuerySubject::You, None, QuestionType::Who) => {
+                match self.partner {
+                    DialoguePartner::CheckpointGuard => KnowledgeResponse::Answer {
+                        text: "番人「俺はこの関所を守る番人だ。通行証のねえ奴は通さん」".into(),
+                    },
+                    DialoguePartner::KnightCommander => KnowledgeResponse::Answer {
+                        text: "団長「私は★★騎士団の団長だ。規律と武勇を重んじる」".into(),
+                    },
+                    _ => KnowledgeResponse::Answer {
+                        text: format!("{}「私かい？ただの{}だよ」", self.partner.name(), self.partner.name()),
+                    },
+                }
+            }
+
+            // --- 3. 文脈トークン: 「私」 ---
+            (_, QuerySubject::Me, None, QuestionType::Who) => {
+                match self.partner {
+                    DialoguePartner::CheckpointGuard => KnowledgeResponse::Answer {
+                        text: "番人「お前？見たところ新米の旅人だな。おかわいそうに、記憶喪失なのですか？」".into(),
+                    },
+                    DialoguePartner::Villager => KnowledgeResponse::Answer {
+                        text: "街の女性「あなたは…立派な旅の冒険者さんにお見受けしますよ」".into(),
+                    },
+                    _ => KnowledgeResponse::Answer {
+                        text: format!("{}「あんたのことかい？元気な旅人に見えるぜ」", self.partner.name()),
+                    },
+                }
+            }
+
+            // --- 4. マンティコア関所：マンティコアの質問チェーン ---
+            (DialoguePartner::CheckpointGuard, QuerySubject::Topic { name, kind: TopicKind::Entity }, None, QuestionType::What)
+                if name == "マンティコア" =>
+            {
+                KnowledgeResponse::Answer {
+                    text: "番人「マンティコアについて聞くなんてお前新人か？ マンティコアは人食いの凶暴な獅子だ。悪いことは言わない、迂回路を通れ」".into(),
+                }
+            }
+
+            (DialoguePartner::CheckpointGuard, QuerySubject::Topic { name, kind: TopicKind::Location }, None, QuestionType::Where | QuestionType::What)
+                if name == "迂回路" =>
+            {
+                KnowledgeResponse::Answer {
+                    text: "番人「比較的マンティコアがいない道だ。10日もあれば通過できるだろ」".into(),
+                }
+            }
+
+            (DialoguePartner::CheckpointGuard, QuerySubject::Topic { name, .. }, Some("弱点"), QuestionType::What)
+                if name == "マンティコア" =>
+            {
+                KnowledgeResponse::Pointer {
+                    text: "番人「マンティコアの弱点については全くわかっていない。だが、★★騎士団団長なら何か知っているかもしれん」".into(),
+                    barrier: None,
+                }
+            }
+
+            (DialoguePartner::CheckpointGuard, QuerySubject::Topic { name, .. }, None, QuestionType::Where)
+                if name == "★★騎士団団長" || name == "★★騎士団" =>
+            {
+                KnowledgeResponse::Pointer {
+                    text: "番人「団長なら◇◇砦に赴任しているが、お前のようなやつにはお会いにならないだろうな」".into(),
+                    barrier: Some(AccessBarrier::RequiresItem("衛兵の紹介状".into())),
+                }
+            }
+
+            // --- 5. 騎士団長との対面（社会的障壁判定） ---
+            (DialoguePartner::KnightCommander, QuerySubject::Topic { name, .. }, Some("弱点"), QuestionType::What)
+                if name == "マンティコア" =>
+            {
+                let has_intro = inventory.map_or(false, |inv| inv.has_item("衛兵の紹介状"));
+                if has_intro {
+                    KnowledgeResponse::Answer {
+                        text: "団長「ほう、衛兵の紹介状か。…マンティコアの弱点だな？あいつの分厚い鬣には氷の魔術が有効だ」".into(),
+                    }
+                } else {
+                    KnowledgeResponse::Pointer {
+                        text: "団長「ふん、紹介状も持たぬ者に教える機密はない。立ち去れ」".into(),
+                        barrier: Some(AccessBarrier::RequiresItem("衛兵の紹介状".into())),
+                    }
+                }
+            }
+
+            // --- 6. 該当なし（完全な未知） ---
+            _ => KnowledgeResponse::Unknown,
+        };
+
+        // 返答テキストの設定
+        let raw_text = match &response {
+            KnowledgeResponse::Answer { text } => text.clone(),
+            KnowledgeResponse::Pointer { text, .. } => text.clone(),
+            KnowledgeResponse::Unknown => {
+                format!("{}「すまんが、それは知らんな」", self.partner.name())
+            }
+        };
+
+        // 下線語句の自動抽出（キーワードリストから一致するものを抽出）
+        // プレイヤーが手動で「おぼえる」を実行することで手帳に登録される（手動記憶ルールの遵守）
+        let known_keywords = [
+            "マンティコア",
+            "迂回路",
+            "トリポリ",
+            "マンティコア関所",
+            "★★騎士団",
+            "★★騎士団団長",
+            "◇◇砦",
+            "氷の魔術",
+            "封魔の迷宮",
+            "封印の祭壇",
+            "光のオーブ",
+            "銀の鍵",
+            "地下迷宮",
+            "裏の抜け道",
+        ];
+        self.learnable_spans = spans_for(&raw_text, &known_keywords);
+        self.current_text = raw_text;
+
+        response
     }
 
     /// 宿屋に泊まる処理
@@ -425,6 +686,174 @@ mod tests {
         assert_eq!(spans[2].slice(text), "銀の鍵");
         assert!(spans[0].start < spans[1].start);
         assert!(spans[1].start < spans[2].start);
+    }
+
+    #[test]
+    fn test_query_here_where() {
+        let mut session = DialogueSession::start(DialoguePartner::CheckpointGuard);
+        let resp = session.ask_query(
+            &QuerySubject::Here,
+            None,
+            QuestionType::Where,
+            "マンティコア関所",
+            None,
+        );
+        match resp {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("ここはマンティコア関所だ"));
+            }
+            _ => panic!("Expected Answer response"),
+        }
+        assert_eq!(
+            learned_words(&session),
+            vec!["マンティコア関所".to_string(), "トリポリ".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_query_who_me_and_you() {
+        let mut session = DialogueSession::start(DialoguePartner::CheckpointGuard);
+
+        // 「あなた」→「誰？」: NPC自身の素性
+        let resp_you = session.ask_query(&QuerySubject::You, None, QuestionType::Who, "関所", None);
+        match resp_you {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("俺はこの関所を守る番人だ"));
+            }
+            _ => panic!("Expected Answer response"),
+        }
+
+        // 「私」→「誰？」: 評判照会・記憶喪失ジョーク
+        let resp_me = session.ask_query(&QuerySubject::Me, None, QuestionType::Who, "関所", None);
+        match resp_me {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("おかわいそうに、記憶喪失なのですか？"));
+            }
+            _ => panic!("Expected Answer response"),
+        }
+    }
+
+    #[test]
+    fn test_query_manticore_checkpoint_chain() {
+        let mut session = DialogueSession::start(DialoguePartner::CheckpointGuard);
+
+        // 1. マンティコアとは何？
+        let manticore = QuerySubject::Topic {
+            name: "マンティコア".into(),
+            kind: TopicKind::Entity,
+        };
+        let resp1 = session.ask_query(&manticore, None, QuestionType::What, "関所", None);
+        match resp1 {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("お前新人か？"));
+                assert!(text.contains("人食いの凶暴な獅子"));
+            }
+            _ => panic!("Expected Answer response"),
+        }
+        // 「マンティコア」(2箇所)「迂回路」(1箇所) が下線対象になる（自動開示ではなく手動記憶対象）
+        assert_eq!(
+            learned_words(&session),
+            vec![
+                "マンティコア".to_string(),
+                "マンティコア".to_string(),
+                "迂回路".to_string()
+            ]
+        );
+
+        // 2. 迂回路とはどこ？
+        let detour = QuerySubject::Topic {
+            name: "迂回路".into(),
+            kind: TopicKind::Location,
+        };
+        let resp2 = session.ask_query(&detour, None, QuestionType::Where, "関所", None);
+        match resp2 {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("比較的マンティコアがいない道だ"));
+            }
+            _ => panic!("Expected Answer response"),
+        }
+
+        // 3. マンティコアの弱点は何？（ポインタ発生）
+        let resp3 = session.ask_query(&manticore, Some("弱点"), QuestionType::What, "関所", None);
+        match resp3 {
+            KnowledgeResponse::Pointer { text, barrier } => {
+                assert!(text.contains("★★騎士団団長なら何か知っているかもしれん"));
+                assert!(barrier.is_none());
+            }
+            _ => panic!("Expected Pointer response"),
+        }
+        // ポインタ先（★★騎士団団長）と、本文中の（マンティコア）が下線語句として提示される
+        assert_eq!(
+            learned_words(&session),
+            vec!["マンティコア".to_string(), "★★騎士団団長".to_string()]
+        );
+
+        // 4. ★★騎士団団長はどこ？（社会的障壁付きポインタ）
+        let commander = QuerySubject::Topic {
+            name: "★★騎士団団長".into(),
+            kind: TopicKind::Person,
+        };
+        let resp4 = session.ask_query(&commander, None, QuestionType::Where, "関所", None);
+        match resp4 {
+            KnowledgeResponse::Pointer { text, barrier } => {
+                assert!(text.contains("◇◇砦に赴任しているが、お前のようなやつにはお会いにならないだろうな"));
+                assert_eq!(
+                    barrier,
+                    Some(AccessBarrier::RequiresItem("衛兵の紹介状".into()))
+                );
+            }
+            _ => panic!("Expected Pointer with barrier"),
+        }
+        assert_eq!(learned_words(&session), vec!["◇◇砦".to_string()]);
+    }
+
+    #[test]
+    fn test_knight_commander_barrier_check() {
+        let mut session = DialogueSession::start(DialoguePartner::KnightCommander);
+        let manticore = QuerySubject::Topic {
+            name: "マンティコア".into(),
+            kind: TopicKind::Entity,
+        };
+
+        // 紹介状なしで団長に弱点を訊く -> 門前払い（社会的障壁）
+        let empty_inv = PlayerInventory::default();
+        let resp_no_intro = session.ask_query(
+            &manticore,
+            Some("弱点"),
+            QuestionType::What,
+            "◇◇砦",
+            Some(&empty_inv),
+        );
+        match resp_no_intro {
+            KnowledgeResponse::Pointer { text, barrier } => {
+                assert!(text.contains("紹介状も持たぬ者に教える機密はない"));
+                assert!(barrier.is_some());
+            }
+            _ => panic!("Expected Barrier rejection"),
+        }
+
+        // 衛兵から紹介状をもらった状態で訊く -> 弱点開示！
+        let mut ready_inv = PlayerInventory::default();
+        ready_inv.add_item("衛兵の紹介状");
+        let resp_with_intro = session.ask_query(
+            &manticore,
+            Some("弱点"),
+            QuestionType::What,
+            "◇◇砦",
+            Some(&ready_inv),
+        );
+        match resp_with_intro {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("ほう、衛兵の紹介状か"));
+                assert!(text.contains("氷の魔術が有効だ"));
+            }
+            _ => panic!("Expected Answer with weakness revealed"),
+        }
+        // 「マンティコア」と「氷の魔術」が下線語句になり、手動でおぼえることができる
+        assert_eq!(
+            learned_words(&session),
+            vec!["マンティコア".to_string(), "氷の魔術".to_string()]
+        );
     }
 
     fn learned_words(session: &DialogueSession) -> Vec<String> {
