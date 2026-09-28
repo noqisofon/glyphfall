@@ -1,7 +1,7 @@
 use super::{
-    CommandKind, DialoguePartner, DialogueSession, DialogueStage, InteractOutcome, MoveOutcome,
-    QuerySubject, QuestionType, TownStateRes, TravelPhase, TravelPosture, TravelSimulation,
-    TravelStepOutcome, TravelTransport, SHOP_ITEMS,
+    CommandKind, DialoguePartner, DialogueSession, DialogueStage, InteractOutcome,
+    KnowledgeResponse, MoveOutcome, QuerySubject, QuestionType, TownStateRes, TravelPhase,
+    TravelPosture, TravelSimulation, TravelStepOutcome, TravelTransport, SHOP_ITEMS,
 };
 use crate::event::{SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes};
 use crate::party::{PlayerInventoryRes, CURRENCY_UNIT};
@@ -355,7 +355,7 @@ pub fn handle_dialogue_input(
                         loc_str
                     };
 
-                    let _ = session.ask_query(
+                    let response = session.ask_query(
                         &query_subject,
                         None,
                         question,
@@ -364,18 +364,23 @@ pub fn handle_dialogue_input(
                         inv.reputation,
                     );
 
-                    // 衛兵に「衛兵の依頼」を聞いた場合、免許アイテムを発行（Scenario000）
+                    let mut msg = session.current_text.clone();
+
+                    // 衛兵が「衛兵の依頼」に答えた場合、免許アイテムを発行（Scenario000）。
+                    // 返答の後ろに入手通知を続けて、1つのメッセージとして表示する
+                    // （同じフレームで複数送ると最後の1件しか表示されないため）。
                     if session.partner == DialoguePartner::Guard
                         && subj_name == "衛兵の依頼"
+                        && matches!(response, KnowledgeResponse::Answer { .. })
                         && !inv.has_item("冒険者ギルド免許")
                     {
                         inv.add_item("冒険者ギルド免許");
-                        msg_events.send(ShowMessage(
-                            "【冒険者ギルド免許】を手に入れた！\n（宿屋での身元確認が可能になりました）".into(),
-                        ));
+                        msg.push_str(
+                            "\n【冒険者ギルド免許】を手に入れた！\n（宿屋での身元確認が可能になりました）",
+                        );
                     }
 
-                    msg_events.send(ShowMessage(session.current_text.clone()));
+                    msg_events.send(ShowMessage(msg));
                     session.stage = DialogueStage::Talking;
                 }
             }

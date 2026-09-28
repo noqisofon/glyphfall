@@ -109,10 +109,7 @@ pub fn format_status_header(
                         ));
                     }
                     DialogueStage::SelectingQuestion { .. } => {
-                        header.push_str(&format!(
-                            "  [会話中: {}] 聞き方を選択中\n",
-                            partner_name
-                        ));
+                        header.push_str(&format!("  [会話中: {}] 聞き方を選択中\n", partner_name));
                     }
                     DialogueStage::ChoosingLearnTarget { .. } => {
                         header.push_str(&format!(
@@ -380,8 +377,9 @@ pub fn format_left_window(
                         .get(subject_cursor)
                         .map(|(n, _)| n.as_str())
                         .unwrap_or("？");
+                    // ウィンドウは5行分しかないため、見出しは「対象」の1行に留める
                     let mut out = format!(
-                        "対象:{}\n【聞き方】\n",
+                        "対象:{}\n",
                         if subject_cursor < 3 {
                             format!("[{}]", subj_name)
                         } else {
