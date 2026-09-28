@@ -7,8 +7,8 @@ use crate::{
     event::SuddenEventCategory,
     party::{MentalState, PartyState, PartyStateRes, Personality, PlayerInventory, CURRENCY_UNIT},
     town::{
-        DialogueLearnStage, DialogueSession, TargetKind, TownState, TownStateRes, TravelPhase,
-        INN_COST,
+        DialogueSession, DialogueStage, TargetKind, TownState, TownStateRes, TravelPhase, INN_COST,
+        QUESTION_TYPES,
     },
     ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
     TravelState, SHOP_ITEMS,
@@ -84,15 +84,27 @@ pub fn format_status_header(
                     .as_ref()
                     .map(|s| s.partner.name())
                     .unwrap_or("相手");
-                let learn_stage = dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default();
-                match learn_stage {
-                    DialogueLearnStage::Talking => {
+                let stage = dialogue.as_ref().map(|s| s.stage).unwrap_or_default();
+                match stage {
+                    DialogueStage::Talking => {
                         header.push_str(&format!(
-                            "  [会話中: {}] 所持金: {}{} | [W/S]で話題選択 | [1]たずねる | [2]おぼえる | [3]はなれる\n",
+                            "  [会話中: {}] 所持金: {}{} | [1]たずねる | [2]おぼえる | [3]はなれる\n",
                             partner_name, inv.gold, CURRENCY_UNIT
                         ));
                     }
-                    DialogueLearnStage::ChoosingLearnTarget { .. } => {
+                    DialogueStage::SelectingSubject { .. } => {
+                        header.push_str(&format!(
+                            "  [会話中: {}] たずねる対象を選択中 | [W/S]対象選択 | [1]決定 | [3]戻る\n",
+                            partner_name
+                        ));
+                    }
+                    DialogueStage::SelectingQuestion { .. } => {
+                        header.push_str(&format!(
+                            "  [会話中: {}] 聞き方を選択中 | [W/S]聞き方選択 | [1]決定 | [3]戻る\n",
+                            partner_name
+                        ));
+                    }
+                    DialogueStage::ChoosingLearnTarget { .. } => {
                         header.push_str(&format!(
                             "  [会話中: {}] 覚える言葉を選択中 | [W/S]候補選択 | [1]決定 | [3]やめる\n",
                             partner_name
@@ -204,13 +216,17 @@ pub fn format_status_header(
                 header.push_str("操作: [WASD]方向を選択 | [Esc]やめる");
             }
         },
-        AppMode::Dialogue => match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
-            DialogueLearnStage::Talking => {
-                header.push_str(
-                    "操作: [W/S]話題選択 | [1/Enter]たずねる | [2]おぼえる | [3/Esc]はなれる",
-                );
+        AppMode::Dialogue => match dialogue.as_ref().map(|s| s.stage).unwrap_or_default() {
+            DialogueStage::Talking => {
+                header.push_str("操作: [1]たずねる | [2]おぼえる | [3/Esc]はなれる");
             }
-            DialogueLearnStage::ChoosingLearnTarget { .. } => {
+            DialogueStage::SelectingSubject { .. } => {
+                header.push_str("操作: [W/S]対象選択 | [1/Enter]決定 | [3/Esc]戻る");
+            }
+            DialogueStage::SelectingQuestion { .. } => {
+                header.push_str("操作: [W/S]聞き方選択 | [1/Enter]決定 | [3/Esc]戻る");
+            }
+            DialogueStage::ChoosingLearnTarget { .. } => {
                 header.push_str("操作: [W/S]候補選択 | [1/Enter]決定 | [3/Esc]やめる");
             }
         },
@@ -218,10 +234,29 @@ pub fn format_status_header(
             header.push_str("操作: [W/S]商品選択 | [1/Enter]かう | [3/Esc]店を出る");
         }
         AppMode::Inn => {
-            header.push_str(&format!(
-                "操作: [1/Enter]とまる({}{}) | [3/Esc]やめる",
-                INN_COST, CURRENCY_UNIT
-            ));
+            let session = dialogue.as_ref();
+            let stage = session.map(|s| s.stage).unwrap_or_default();
+            match stage {
+                DialogueStage::ChoosingLearnTarget { .. } => {
+                    header.push_str("操作: [W/S]候補選択 | [1/Enter]決定 | [3/Esc]やめる");
+                }
+                _ => {
+                    let has_learnable = session
+                        .map(|s| !s.learnable_spans.is_empty())
+                        .unwrap_or(false);
+                    if has_learnable {
+                        header.push_str(&format!(
+                            "操作: [1/Enter]とまる({}{}) | [2]おぼえる | [3/Esc]宿を出る",
+                            INN_COST, CURRENCY_UNIT
+                        ));
+                    } else {
+                        header.push_str(&format!(
+                            "操作: [1/Enter]とまる({}{}) | [3/Esc]宿を出る",
+                            INN_COST, CURRENCY_UNIT
+                        ));
+                    }
+                }
+            }
         }
         AppMode::Battle => {
             header.push_str(
@@ -298,13 +333,75 @@ pub fn format_left_window(
         },
         AppMode::Dialogue => {
             let session = dialogue.as_ref();
-            let selected = session.map(|s| s.selected_topic_index).unwrap_or(0);
-            let mut out = "【話題を振る】\n".to_string();
-            for (idx, topic) in inv.topics.iter().enumerate().take(4) {
-                let cursor = if idx == selected { "▶" } else { " " };
-                out.push_str(&format!("{} {}\n", cursor, topic));
+            let stage = session.map(|s| s.stage).unwrap_or_default();
+            match stage {
+                DialogueStage::Talking => {
+                    let mut out = "【覚えた話題】\n".to_string();
+                    if inv.topics.is_empty() {
+                        out.push_str(" (話題なし)\n");
+                    } else {
+                        for topic in inv.topics.iter().take(4) {
+                            out.push_str(&format!("・{}\n", topic));
+                        }
+                    }
+                    out
+                }
+                DialogueStage::SelectingSubject { cursor } => {
+                    let mut out = "【たずねる対象】\n".to_string();
+                    let subjects = DialogueSession::selectable_subjects(&inv.topics);
+                    let max_visible = 4;
+                    let start = if cursor >= max_visible {
+                        cursor + 1 - max_visible
+                    } else {
+                        0
+                    };
+                    for (idx, (name, _)) in
+                        subjects.iter().enumerate().skip(start).take(max_visible)
+                    {
+                        let c = if idx == cursor { "▶" } else { " " };
+                        if idx < 3 {
+                            out.push_str(&format!("{} [{}]\n", c, name));
+                        } else {
+                            out.push_str(&format!("{} {}\n", c, name));
+                        }
+                    }
+                    out
+                }
+                DialogueStage::SelectingQuestion {
+                    subject_cursor,
+                    cursor,
+                } => {
+                    let subjects = DialogueSession::selectable_subjects(&inv.topics);
+                    let subj_name = subjects
+                        .get(subject_cursor)
+                        .map(|(n, _)| n.as_str())
+                        .unwrap_or("？");
+                    let mut out = format!(
+                        "対象:{}\n【聞き方】\n",
+                        if subject_cursor < 3 {
+                            format!("[{}]", subj_name)
+                        } else {
+                            subj_name.to_string()
+                        }
+                    );
+                    for (idx, (_, label)) in QUESTION_TYPES.iter().enumerate() {
+                        let c = if idx == cursor { "▶" } else { " " };
+                        out.push_str(&format!("{} {}\n", c, label));
+                    }
+                    out
+                }
+                DialogueStage::ChoosingLearnTarget { cursor } => {
+                    let mut out = "【おぼえる語句】\n".to_string();
+                    if let Some(s) = session {
+                        for (idx, span) in s.learnable_spans.iter().enumerate().take(4) {
+                            let c = if idx == cursor { "▶" } else { " " };
+                            let word = span.slice(&s.current_text);
+                            out.push_str(&format!("{} {}\n", c, word));
+                        }
+                    }
+                    out
+                }
             }
-            out
         }
         AppMode::Shop => {
             let session = dialogue.as_ref();
@@ -320,10 +417,24 @@ pub fn format_left_window(
             out
         }
         AppMode::Inn => {
-            format!(
-                "【宿屋・宿泊】\n一泊料金: 50{}\n所持金  : {}{}\n全員のHP/MP全快",
-                CURRENCY_UNIT, inv.gold, CURRENCY_UNIT
-            )
+            let session = dialogue.as_ref();
+            let stage = session.map(|s| s.stage).unwrap_or_default();
+            if let DialogueStage::ChoosingLearnTarget { cursor } = stage {
+                let mut out = "【おぼえる語句】\n".to_string();
+                if let Some(s) = session {
+                    for (idx, span) in s.learnable_spans.iter().enumerate().take(4) {
+                        let c = if idx == cursor { "▶" } else { " " };
+                        let word = span.slice(&s.current_text);
+                        out.push_str(&format!("{} {}\n", c, word));
+                    }
+                }
+                out
+            } else {
+                format!(
+                    "【宿屋・宿泊】\n一泊料金: 50{}\n所持金  : {}{}\n全員のHP/MP全快",
+                    CURRENCY_UNIT, inv.gold, CURRENCY_UNIT
+                )
+            }
         }
         AppMode::Town => {
             let mut out = format!("【手帳】金:{}{}\n[覚えた話題]\n", inv.gold, CURRENCY_UNIT);
@@ -430,8 +541,8 @@ pub fn format_right_window(
             CommandMenuStage::ChoosingCommand => "[W/S]選択\n[1/Enter]決定\n[3/Esc]やめる".into(),
             CommandMenuStage::ChoosingDirection(_) => "[WASD]方向選択\n[Esc]やめる".into(),
         },
-        AppMode::Dialogue => match dialogue.as_ref().map(|s| s.learn_stage).unwrap_or_default() {
-            DialogueLearnStage::Talking => {
+        AppMode::Dialogue => match dialogue.as_ref().map(|s| s.stage).unwrap_or_default() {
+            DialogueStage::Talking => {
                 let has_learnable = dialogue
                     .as_ref()
                     .map(|s| !s.learnable_spans.is_empty())
@@ -441,17 +552,42 @@ pub fn format_right_window(
                 } else {
                     "[2]おぼえる"
                 };
-                format!("[1]たずねる\n{}\n[3]はなれる\n(W/S:選択)", learn_str)
+                format!("[1]たずねる\n{}\n[3]はなれる", learn_str)
             }
-            DialogueLearnStage::ChoosingLearnTarget { .. } => {
-                "[1]決定\n[3]やめる\n\n(W/S:候補選択)".into()
+            DialogueStage::SelectingSubject { .. } => {
+                "[1/Enter]決定\n[3/Esc]戻る\n\n(W/S:対象選択)".into()
+            }
+            DialogueStage::SelectingQuestion { .. } => {
+                "[1/Enter]決定\n[3/Esc]戻る\n\n(W/S:聞き方)".into()
+            }
+            DialogueStage::ChoosingLearnTarget { .. } => {
+                "[1/Enter]決定\n[3/Esc]やめる\n\n(W/S:語句選択)".into()
             }
         },
         AppMode::Shop => "[1]かう\n[3]みせをでる\n(W/S:商品選)\n(所持金消費)".into(),
-        AppMode::Inn => format!(
-            "[1]とまる({}{})\n[3]やめる\n\n(HP/MP全回復)",
-            INN_COST, CURRENCY_UNIT
-        ),
+        AppMode::Inn => {
+            let session = dialogue.as_ref();
+            let stage = session.map(|s| s.stage).unwrap_or_default();
+            match stage {
+                DialogueStage::ChoosingLearnTarget { .. } => {
+                    "[1/Enter]決定\n[3/Esc]やめる\n\n(W/S:語句選択)".into()
+                }
+                _ => {
+                    let has_learnable = session
+                        .map(|s| !s.learnable_spans.is_empty())
+                        .unwrap_or(false);
+                    let learn_str = if has_learnable {
+                        "\n[2]おぼえる★"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        "[1]とまる({}{}){}\n[3]やめる",
+                        INN_COST, CURRENCY_UNIT, learn_str
+                    )
+                }
+            }
+        }
         AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
         AppMode::Battle => match &battle.phase {
             BattlePhase::CommandInput { member_cursor } => {

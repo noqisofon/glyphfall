@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     battle::BattleStateRes,
-    town::{DialogueLearnStage, LearnableSpan},
+    town::{DialogueStage, LearnableSpan},
     ActiveDialogue, AppMode, ShowMessage,
 };
 use bevy::prelude::*;
@@ -82,7 +82,7 @@ pub fn dialogue_underline_tick(
         return;
     };
 
-    let session = (*mode == AppMode::Dialogue)
+    let session = (*mode == AppMode::Dialogue || *mode == AppMode::Inn)
         .then(|| dialogue_res.0.as_ref())
         .flatten();
     let Some(session) = session else {
@@ -105,8 +105,8 @@ pub fn dialogue_underline_tick(
         *underline_text = Text::new("");
     }
 
-    *highlight_text = match session.learn_stage {
-        DialogueLearnStage::ChoosingLearnTarget { cursor } if fully_shown => session
+    *highlight_text = match session.stage {
+        DialogueStage::ChoosingLearnTarget { cursor } if fully_shown => session
             .learnable_spans
             .get(cursor)
             .map(|span| Text::new(build_highlight_text(&session.current_text, span)))

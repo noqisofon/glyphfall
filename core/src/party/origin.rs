@@ -324,6 +324,7 @@ impl CharacterBuild {
             gold,
             items,
             topics,
+            reputation: 0,
         }
     }
 

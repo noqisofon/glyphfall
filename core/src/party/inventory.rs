@@ -9,6 +9,7 @@ pub struct PlayerInventory {
     pub gold: i32,
     pub items: Vec<String>,
     pub topics: Vec<String>,
+    pub reputation: i32,
 }
 
 impl Default for PlayerInventory {
@@ -17,6 +18,7 @@ impl Default for PlayerInventory {
             gold: 100,
             items: vec!["やくそう".into(), "松明".into()],
             topics: vec!["王都アルカン".into(), "封魔の迷宮".into()],
+            reputation: 0,
         }
     }
 }

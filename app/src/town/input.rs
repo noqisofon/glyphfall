@@ -1,7 +1,7 @@
 use super::{
-    CommandKind, DialogueLearnStage, DialoguePartner, DialogueSession, InteractOutcome,
-    MoveOutcome, TownStateRes, TravelPhase, TravelPosture, TravelSimulation, TravelStepOutcome,
-    TravelTransport, SHOP_ITEMS,
+    CommandKind, DialoguePartner, DialogueSession, DialogueStage, InteractOutcome, MoveOutcome,
+    QuerySubject, QuestionType, TownStateRes, TravelPhase, TravelPosture, TravelSimulation,
+    TravelStepOutcome, TravelTransport, SHOP_ITEMS,
 };
 use crate::event::{SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes};
 use crate::party::{PlayerInventoryRes, CURRENCY_UNIT};
@@ -220,38 +220,17 @@ pub fn handle_dialogue_input(
     mut mode: ResMut<AppMode>,
     mut inv: ResMut<PlayerInventoryRes>,
     mut dialogue_res: ResMut<ActiveDialogue>,
+    town: Option<Res<TownStateRes>>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
-    let learn_stage = dialogue_res
-        .0
-        .as_ref()
-        .map(|s| s.learn_stage)
-        .unwrap_or_default();
+    let stage = dialogue_res.0.as_ref().map(|s| s.stage).unwrap_or_default();
 
-    match learn_stage {
-        DialogueLearnStage::Talking => {
-            // [W/S]: 話題選択
-            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    session.selected_topic_index = session.selected_topic_index.saturating_sub(1);
-                }
-            }
-            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
-                if let Some(session) = dialogue_res.0.as_mut() {
-                    let max_idx = inv.topics.len().saturating_sub(1);
-                    if session.selected_topic_index < max_idx {
-                        session.selected_topic_index += 1;
-                    }
-                }
-            }
-
-            // [1] / [Enter]: 話題を振る
+    match stage {
+        DialogueStage::Talking => {
+            // [1] / [Enter]: 「たずねる」対象選択を開始
             if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
                 if let Some(session) = dialogue_res.0.as_mut() {
-                    if let Some(topic) = inv.topics.get(session.selected_topic_index).cloned() {
-                        session.ask_topic(&topic);
-                        msg_events.send(ShowMessage(session.current_text.clone()));
-                    }
+                    session.stage = DialogueStage::SelectingSubject { cursor: 0 };
                 }
             }
 
@@ -278,8 +257,7 @@ pub fn handle_dialogue_input(
                             msg_events.send(ShowMessage(msg));
                         }
                         _ => {
-                            session.learn_stage =
-                                DialogueLearnStage::ChoosingLearnTarget { cursor: 0 };
+                            session.stage = DialogueStage::ChoosingLearnTarget { cursor: 0 };
                         }
                     }
                 }
@@ -292,12 +270,131 @@ pub fn handle_dialogue_input(
                 msg_events.send(ShowMessage("会話を終えて、再び歩き出した。".into()));
             }
         }
-        DialogueLearnStage::ChoosingLearnTarget { cursor } => {
+        DialogueStage::SelectingSubject { cursor } => {
+            let total = 3 + inv.topics.len();
+            // [W/S]: 対象カーソル移動
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.stage = DialogueStage::SelectingSubject {
+                        cursor: cursor.saturating_sub(1),
+                    };
+                }
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if cursor + 1 < total {
+                        session.stage = DialogueStage::SelectingSubject { cursor: cursor + 1 };
+                    }
+                }
+            }
+
+            // [1] / [Enter]: 対象確定 -> 聞き方選択へ
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.stage = DialogueStage::SelectingQuestion {
+                        subject_cursor: cursor,
+                        cursor: 0,
+                    };
+                }
+            }
+
+            // [3] / [Esc]: 対象選択をやめてTalkingへ戻る
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.stage = DialogueStage::Talking;
+                }
+            }
+        }
+        DialogueStage::SelectingQuestion {
+            subject_cursor,
+            cursor,
+        } => {
+            // [W/S]: 聞き方カーソル移動
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.stage = DialogueStage::SelectingQuestion {
+                        subject_cursor,
+                        cursor: cursor.saturating_sub(1),
+                    };
+                }
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if cursor + 1 < 4 {
+                        session.stage = DialogueStage::SelectingQuestion {
+                            subject_cursor,
+                            cursor: cursor + 1,
+                        };
+                    }
+                }
+            }
+
+            // [1] / [Enter]: 聞き方確定 -> ask_query 実行
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let subjects = DialogueSession::selectable_subjects(&inv.topics);
+                    let (subj_name, query_subject) = subjects
+                        .get(subject_cursor)
+                        .cloned()
+                        .unwrap_or_else(|| ("ここ".to_string(), QuerySubject::Here));
+
+                    let question = match cursor {
+                        0 => QuestionType::What,
+                        1 => QuestionType::Where,
+                        2 => QuestionType::DoYouKnow,
+                        _ => QuestionType::Who,
+                    };
+
+                    let loc_str = town
+                        .as_ref()
+                        .map(|t| t.current_area.name())
+                        .unwrap_or("王都アルカン");
+                    let location = if loc_str.contains("王都アルカン") {
+                        "王都アルカン"
+                    } else {
+                        loc_str
+                    };
+
+                    let _ = session.ask_query(
+                        &query_subject,
+                        None,
+                        question,
+                        location,
+                        Some(&inv),
+                        inv.reputation,
+                    );
+
+                    // 衛兵に「衛兵の依頼」を聞いた場合、免許アイテムを発行（Scenario000）
+                    if session.partner == DialoguePartner::Guard
+                        && subj_name == "衛兵の依頼"
+                        && !inv.has_item("冒険者ギルド免許")
+                    {
+                        inv.add_item("冒険者ギルド免許");
+                        msg_events.send(ShowMessage(
+                            "【冒険者ギルド免許】を手に入れた！\n（宿屋での身元確認が可能になりました）".into(),
+                        ));
+                    }
+
+                    msg_events.send(ShowMessage(session.current_text.clone()));
+                    session.stage = DialogueStage::Talking;
+                }
+            }
+
+            // [3] / [Esc]: 対象選択に戻る
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.stage = DialogueStage::SelectingSubject {
+                        cursor: subject_cursor,
+                    };
+                }
+            }
+        }
+        DialogueStage::ChoosingLearnTarget { cursor } => {
             // [W/S]: 下線候補のカーソル移動（本文中の出現順を循環）
             if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
                 if let Some(session) = dialogue_res.0.as_mut() {
                     let len = session.learnable_spans.len().max(1);
-                    session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
+                    session.stage = DialogueStage::ChoosingLearnTarget {
                         cursor: (cursor + len - 1) % len,
                     };
                 }
@@ -305,7 +402,7 @@ pub fn handle_dialogue_input(
             if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
                 if let Some(session) = dialogue_res.0.as_mut() {
                     let len = session.learnable_spans.len().max(1);
-                    session.learn_stage = DialogueLearnStage::ChoosingLearnTarget {
+                    session.stage = DialogueStage::ChoosingLearnTarget {
                         cursor: (cursor + 1) % len,
                     };
                 }
@@ -327,14 +424,14 @@ pub fn handle_dialogue_input(
                         };
                         msg_events.send(ShowMessage(msg));
                     }
-                    session.learn_stage = DialogueLearnStage::Talking;
+                    session.stage = DialogueStage::Talking;
                 }
             }
 
             // [3] / [Esc]: 何も覚えずに選択をやめる（会話自体は終えない）
             if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
                 if let Some(session) = dialogue_res.0.as_mut() {
-                    session.learn_stage = DialogueLearnStage::Talking;
+                    session.stage = DialogueStage::Talking;
                 }
             }
         }
@@ -396,19 +493,101 @@ pub fn handle_inn_input(
     mut dialogue_res: ResMut<ActiveDialogue>,
     mut msg_events: EventWriter<ShowMessage>,
 ) {
-    // [1] / [Enter]: 宿泊
-    if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
-        if let Some(session) = dialogue_res.0.as_mut() {
-            let _ = session.rest_at_inn(&mut inv, &mut party.members, 10);
-            msg_events.send(ShowMessage(session.current_text.clone()));
-        }
-    }
+    let stage = dialogue_res.0.as_ref().map(|s| s.stage).unwrap_or_default();
 
-    // [3] / [Esc]: 宿を出る
-    if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
-        dialogue_res.0 = None;
-        *mode = AppMode::Town;
-        msg_events.send(ShowMessage("宿屋を出た。".into()));
+    match stage {
+        DialogueStage::ChoosingLearnTarget { cursor } => {
+            // [W/S]: 下線候補のカーソル移動
+            if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let len = session.learnable_spans.len().max(1);
+                    session.stage = DialogueStage::ChoosingLearnTarget {
+                        cursor: (cursor + len - 1) % len,
+                    };
+                }
+            }
+            if keyboard.just_pressed(KeyCode::KeyS) || keyboard.just_pressed(KeyCode::ArrowDown) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let len = session.learnable_spans.len().max(1);
+                    session.stage = DialogueStage::ChoosingLearnTarget {
+                        cursor: (cursor + 1) % len,
+                    };
+                }
+            }
+
+            // [1] / [Enter]: 覚える
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    if let Some(span) = session.learnable_spans.get(cursor).copied() {
+                        let word = span.slice(&session.current_text);
+                        let learned = inv.learn_topic(&word);
+                        let msg = if learned {
+                            format!(
+                                "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                word
+                            )
+                        } else {
+                            format!("【{}】は既に覚えている。", word)
+                        };
+                        msg_events.send(ShowMessage(msg));
+                    }
+                    session.stage = DialogueStage::Talking;
+                }
+            }
+
+            // [3] / [Esc]: 選択をやめて通常へ戻る
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    session.stage = DialogueStage::Talking;
+                }
+            }
+        }
+        _ => {
+            // [1] / [Enter]: 宿泊
+            if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    let rep = inv.reputation;
+                    let _ = session.rest_at_inn(&mut inv, &mut party.members, rep);
+                    msg_events.send(ShowMessage(session.current_text.clone()));
+                }
+            }
+
+            // [2]: 「おぼえる」（門前払いメッセージ等から「洞穴」「冒険者ギルド免許」を覚える）
+            if keyboard.just_pressed(KeyCode::Digit2) {
+                if let Some(session) = dialogue_res.0.as_mut() {
+                    match session.learnable_spans.len() {
+                        0 => {
+                            msg_events.send(ShowMessage(
+                                "新しく覚えられるキーワードは見当たらない。".into(),
+                            ));
+                        }
+                        1 => {
+                            let word = session.learnable_spans[0].slice(&session.current_text);
+                            let learned = inv.learn_topic(&word);
+                            let msg = if learned {
+                                format!(
+                                    "【{}】を手帳に覚えた！\n（話題リストに追加されました）",
+                                    word
+                                )
+                            } else {
+                                format!("【{}】は既に覚えている。", word)
+                            };
+                            msg_events.send(ShowMessage(msg));
+                        }
+                        _ => {
+                            session.stage = DialogueStage::ChoosingLearnTarget { cursor: 0 };
+                        }
+                    }
+                }
+            }
+
+            // [3] / [Esc]: 宿を出る
+            if keyboard.just_pressed(KeyCode::Digit3) || keyboard.just_pressed(KeyCode::Escape) {
+                dialogue_res.0 = None;
+                *mode = AppMode::Town;
+                msg_events.send(ShowMessage("宿屋を出た。".into()));
+            }
+        }
     }
 }
 
@@ -811,6 +990,237 @@ mod tests {
             assert!(center_display.contains("第2日目"));
             assert!(center_display.contains("第3日目"));
             assert!(center_display.contains("無事到着した"));
+        }
+    }
+
+    fn create_test_dialogue_app(partner: DialoguePartner) -> App {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<Time>();
+        app.insert_resource(AppMode::Dialogue);
+        app.insert_resource(TownStateRes {
+            state: TownState::new(),
+            texture_handle: Handle::default(),
+        });
+        let inv = PlayerInventory {
+            gold: 50,
+            topics: Vec::new(),
+            items: Vec::new(),
+            reputation: 0,
+        };
+        app.insert_resource(PlayerInventoryRes(inv));
+        app.insert_resource(ActiveDialogue(Some(DialogueSession::start(partner))));
+        app.add_event::<ShowMessage>();
+        app.add_systems(Update, handle_dialogue_input);
+        app
+    }
+
+    fn create_test_inn_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<Time>();
+        app.insert_resource(AppMode::Inn);
+        let inv = PlayerInventory {
+            gold: 50,
+            topics: Vec::new(),
+            items: Vec::new(),
+            reputation: 0,
+        };
+        app.insert_resource(PlayerInventoryRes(inv));
+        app.insert_resource(PartyStateRes(crate::party::PartyState {
+            selected_index: 0,
+            debug_mode: false,
+            members: vec![crate::party::PartyMember::new_player("テスト旅人").with_stats(5, 0)],
+        }));
+        app.insert_resource(ActiveDialogue(Some(DialogueSession::start(
+            DialoguePartner::Inn,
+        ))));
+        app.add_event::<ShowMessage>();
+        app.add_systems(Update, handle_inn_input);
+        app
+    }
+
+    #[test]
+    fn test_scenario000_dialogue_here_where_and_learn_guild() {
+        let mut app = create_test_dialogue_app(DialoguePartner::Villager);
+
+        // 1. [1] で「たずねる」対象選択を開始
+        press_key(&mut app, KeyCode::Digit1);
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert_eq!(session.stage, DialogueStage::SelectingSubject { cursor: 0 });
+        }
+
+        // 2. cursor 0（[ここ]）を確定して聞き方選択へ
+        press_key(&mut app, KeyCode::Digit1);
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert_eq!(
+                session.stage,
+                DialogueStage::SelectingQuestion {
+                    subject_cursor: 0,
+                    cursor: 0
+                }
+            );
+        }
+
+        // 3. [S]キーでカーソルを 1（どこ？）に移動
+        press_key(&mut app, KeyCode::KeyS);
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert_eq!(
+                session.stage,
+                DialogueStage::SelectingQuestion {
+                    subject_cursor: 0,
+                    cursor: 1
+                }
+            );
+        }
+
+        // 4. [1] で確定 -> 「ここ→どこ？」が実行され、本文が更新されてTalkingに戻る
+        press_key(&mut app, KeyCode::Digit1);
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert_eq!(session.stage, DialogueStage::Talking);
+            assert!(session.current_text.contains("ここは王都アルカンです"));
+            assert!(session
+                .current_text
+                .contains("冒険者ギルドをお探しですか？"));
+            assert_eq!(session.learnable_spans.len(), 1);
+            let span = session.learnable_spans[0];
+            assert_eq!(span.slice(&session.current_text), "冒険者ギルド");
+        }
+
+        // 5. [2] で「おぼえる」実行 -> 候補が1件なので手帳（inv.topics）に即座に追加
+        press_key(&mut app, KeyCode::Digit2);
+        {
+            let inv = app.world().resource::<PlayerInventoryRes>();
+            assert!(inv.topics.contains(&"冒険者ギルド".to_string()));
+        }
+
+        // 6. 再び「たずねる」を開始し、今覚えた「冒険者ギルド」を選択
+        press_key(&mut app, KeyCode::Digit1);
+        // cursor: 0=[ここ], 1=[あなた], 2=[私], 3=冒険者ギルド
+        press_key(&mut app, KeyCode::KeyS); // 1
+        press_key(&mut app, KeyCode::KeyS); // 2
+        press_key(&mut app, KeyCode::KeyS); // 3 (冒険者ギルド)
+        press_key(&mut app, KeyCode::Digit1); // 確定 -> 聞き方へ
+        press_key(&mut app, KeyCode::KeyS); // cursor 1: どこ？
+        press_key(&mut app, KeyCode::Digit1); // 確定 -> 実行！
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert!(session.current_text.contains("中央広場の宿屋の隣ですよ"));
+            let words: Vec<String> = session
+                .learnable_spans
+                .iter()
+                .map(|s| s.slice(&session.current_text))
+                .collect();
+            assert!(words.contains(&"宿屋".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_scenario000_inn_rejection_and_learn_cave() {
+        let mut app = create_test_inn_app();
+
+        // 1. [1] で宿泊を試みる -> 評判0・免許なしで門前払い！
+        press_key(&mut app, KeyCode::Digit1);
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert!(session.current_text.contains("素性の知れないお方"));
+            assert!(session
+                .current_text
+                .contains("外の洞穴で夜露をしのぐといい"));
+            assert_eq!(session.learnable_spans.len(), 2);
+            let words: Vec<String> = session
+                .learnable_spans
+                .iter()
+                .map(|s| s.slice(&session.current_text))
+                .collect();
+            assert!(words.contains(&"洞穴".to_string()));
+            assert!(words.contains(&"冒険者ギルド免許".to_string()));
+        }
+
+        // 2. [2] で「おぼえる」を押す -> 2件あるので ChoosingLearnTarget へ遷移
+        press_key(&mut app, KeyCode::Digit2);
+        {
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert_eq!(
+                session.stage,
+                DialogueStage::ChoosingLearnTarget { cursor: 0 }
+            );
+        }
+
+        // 3. cursor 0 を確定して覚える
+        press_key(&mut app, KeyCode::Digit1);
+        {
+            let inv = app.world().resource::<PlayerInventoryRes>();
+            assert!(
+                inv.topics.contains(&"洞穴".to_string())
+                    || inv.topics.contains(&"冒険者ギルド免許".to_string())
+            );
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert_eq!(session.stage, DialogueStage::Talking);
+        }
+    }
+
+    #[test]
+    fn test_scenario000_guard_grant_license_and_inn_acceptance() {
+        let mut app = create_test_dialogue_app(DialoguePartner::Guard);
+        // プレイヤーに「衛兵の依頼」の話題を付与
+        app.world_mut()
+            .resource_mut::<PlayerInventoryRes>()
+            .learn_topic("衛兵の依頼");
+
+        // 衛兵に「衛兵の依頼」についてたずねる
+        press_key(&mut app, KeyCode::Digit1); // [1] たずねる開始
+                                              // cursor: 0=[ここ], 1=[あなた], 2=[私], 3=衛兵の依頼
+        press_key(&mut app, KeyCode::KeyS);
+        press_key(&mut app, KeyCode::KeyS);
+        press_key(&mut app, KeyCode::KeyS); // cursor 3
+        press_key(&mut app, KeyCode::Digit1); // 確定 -> 聞き方 (cursor 0: 何？)
+        press_key(&mut app, KeyCode::Digit1); // 確定 -> 実行！
+
+        // 衛兵から免許が発行され、所持品に追加されていること！
+        {
+            let inv = app.world().resource::<PlayerInventoryRes>();
+            assert!(inv.has_item("冒険者ギルド免許"));
+            let dialogue = app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert!(session
+                .current_text
+                .contains("これが【冒険者ギルド免許】だ！"));
+        }
+
+        // この免許を持った状態で宿屋へ宿泊
+        let mut inn_app = create_test_inn_app();
+        inn_app
+            .world_mut()
+            .resource_mut::<PlayerInventoryRes>()
+            .add_item("冒険者ギルド免許");
+
+        press_key(&mut inn_app, KeyCode::Digit1); // 宿泊！
+        {
+            let dialogue = inn_app.world().resource::<ActiveDialogue>();
+            let session = dialogue.0.as_ref().unwrap();
+            assert!(session
+                .current_text
+                .contains("冒険者ギルド免許を確認したよ"));
+            assert!(session.current_text.contains("君の正式な住所として登録"));
+            assert!(session
+                .current_text
+                .contains("仲間全員のHPとMPが全快した！"));
+
+            let party = inn_app.world().resource::<PartyStateRes>();
+            assert_eq!(party.members[0].hp, party.members[0].max_hp);
         }
     }
 }
