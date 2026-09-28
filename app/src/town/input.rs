@@ -399,7 +399,7 @@ pub fn handle_inn_input(
     // [1] / [Enter]: 宿泊
     if keyboard.just_pressed(KeyCode::Digit1) || keyboard.just_pressed(KeyCode::Enter) {
         if let Some(session) = dialogue_res.0.as_mut() {
-            session.rest_at_inn(&mut inv, &mut party.members);
+            let _ = session.rest_at_inn(&mut inv, &mut party.members, 10);
             msg_events.send(ShowMessage(session.current_text.clone()));
         }
     }

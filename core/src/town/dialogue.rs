@@ -37,10 +37,24 @@ pub enum QuestionType {
 /// 謁見・面会の社会的障壁（静的データ。ADR-0028）
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AccessBarrier {
-    /// 第三者が発行した書類・アイテムが必要（例: 紹介状、通行証）
+    /// 第三者が発行した書類・アイテムが必要（例: 紹介状、通行証、免許）
     RequiresItem(String),
     /// 地域・組織の評判が必要（影響度とは別軸の顔見知り度）
     RequiresReputation { faction: String, min_reputation: i32 },
+}
+
+impl AccessBarrier {
+    /// 所持品と評判値に基づいて障壁を突破可能かを判定（静的条件とプレイヤー状態の分離）
+    pub fn is_satisfied(&self, inv: Option<&PlayerInventory>, reputation: i32) -> bool {
+        match self {
+            AccessBarrier::RequiresItem(item_name) => {
+                inv.map_or(false, |i| i.has_item(item_name))
+            }
+            AccessBarrier::RequiresReputation {
+                min_reputation, ..
+            } => reputation >= *min_reputation,
+        }
+    }
 }
 
 /// 知識に対するNPCの返答（MVP第1段階。ADR-0028）
@@ -372,6 +386,7 @@ impl DialogueSession {
     /// question: 疑問詞（What/Where/DoYouKnow/Who）
     /// current_location: 現在地名（例: "マンティコア関所", "王都アルカン", "トリポリ"）
     /// inventory: プレイヤー所持品（社会的障壁判定用）
+    /// reputation: 地域・組織の評判値（素性・顔見知り度。ADR-0028）
     pub fn ask_query(
         &mut self,
         subject: &QuerySubject,
@@ -379,6 +394,7 @@ impl DialogueSession {
         question: QuestionType,
         current_location: &str,
         inventory: Option<&PlayerInventory>,
+        reputation: i32,
     ) -> KnowledgeResponse {
         self.learn_stage = DialogueLearnStage::Talking;
 
@@ -390,7 +406,7 @@ impl DialogueSession {
                         text: "番人「ここはマンティコア関所だ。東へ進めばトリポリだが、この先は通れんよ」".into(),
                     },
                     DialoguePartner::Villager => KnowledgeResponse::Answer {
-                        text: format!("街の女性「ようこそ、旅の人。ここは{}です」", current_location),
+                        text: format!("街の女性「ようこそ、旅の人。ここは{}です。冒険者ギルドをお探しですか？」", current_location),
                     },
                     DialoguePartner::Guard => KnowledgeResponse::Answer {
                         text: format!("王都衛兵「ここは{}だ。怪しい行動は慎むようにな」", current_location),
@@ -470,20 +486,50 @@ impl DialogueSession {
             (DialoguePartner::KnightCommander, QuerySubject::Topic { name, .. }, Some("弱点"), QuestionType::What)
                 if name == "マンティコア" =>
             {
-                let has_intro = inventory.map_or(false, |inv| inv.has_item("衛兵の紹介状"));
-                if has_intro {
+                let barrier = AccessBarrier::RequiresItem("衛兵の紹介状".into());
+                if barrier.is_satisfied(inventory, reputation) {
                     KnowledgeResponse::Answer {
                         text: "団長「ほう、衛兵の紹介状か。…マンティコアの弱点だな？あいつの分厚い鬣には氷の魔術が有効だ」".into(),
                     }
                 } else {
                     KnowledgeResponse::Pointer {
                         text: "団長「ふん、紹介状も持たぬ者に教える機密はない。立ち去れ」".into(),
-                        barrier: Some(AccessBarrier::RequiresItem("衛兵の紹介状".into())),
+                        barrier: Some(barrier),
                     }
                 }
             }
 
-            // --- 6. 該当なし（完全な未知） ---
+            // --- 6. Scenario000: 漂着＋冒険者ギルド免許チェーン ---
+            // 村人に「冒険者ギルド」の場所を尋ねる
+            (DialoguePartner::Villager, QuerySubject::Topic { name, .. }, None, QuestionType::Where)
+                if name == "冒険者ギルド" =>
+            {
+                KnowledgeResponse::Pointer {
+                    text: "街の女性「冒険者ギルドなら、中央広場の宿屋の隣ですよ。身元の保証もしてくれるはずです」".into(),
+                    barrier: None,
+                }
+            }
+
+            // 衛兵に「冒険者ギルド免許」について尋ねる（取得条件を知る）
+            (DialoguePartner::Guard, QuerySubject::Topic { name, .. }, None, QuestionType::What | QuestionType::DoYouKnow)
+                if name == "冒険者ギルド免許" =>
+            {
+                KnowledgeResponse::Pointer {
+                    text: "王都衛兵「冒険者ギルド免許か。身元のない流れ者でも、衛兵の依頼をこなせばギルドから免許が発行されるぜ」".into(),
+                    barrier: Some(AccessBarrier::RequiresItem("冒険者ギルド免許".into())),
+                }
+            }
+
+            // 宿屋の主人に「冒険者ギルド免許」について尋ねる
+            (DialoguePartner::Inn, QuerySubject::Topic { name, .. }, None, QuestionType::DoYouKnow | QuestionType::What)
+                if name == "冒険者ギルド免許" =>
+            {
+                KnowledgeResponse::Answer {
+                    text: "宿屋の主人「免許を持っていれば、うちの宿を君の正式な住所として登録して宿泊できるようになるよ」".into(),
+                }
+            }
+
+            // --- 7. 該当なし（完全な未知） ---
             _ => KnowledgeResponse::Unknown,
         };
 
@@ -513,6 +559,11 @@ impl DialogueSession {
             "銀の鍵",
             "地下迷宮",
             "裏の抜け道",
+            "冒険者ギルド",
+            "冒険者ギルド免許",
+            "衛兵の依頼",
+            "宿屋",
+            "洞穴",
         ];
         self.learnable_spans = spans_for(&raw_text, &known_keywords);
         self.current_text = raw_text;
@@ -520,21 +571,45 @@ impl DialogueSession {
         response
     }
 
-    /// 宿屋に泊まる処理
-    pub fn rest_at_inn(&mut self, inv: &mut PlayerInventory, members: &mut [PartyMember]) -> bool {
+    /// 宿屋に泊まる処理（ADR-0028: 身元確認障壁の判定付き）
+    /// 免許アイテム所持、または地域評判10以上で身元確認成立
+    pub fn rest_at_inn(
+        &mut self,
+        inv: &mut PlayerInventory,
+        members: &mut [PartyMember],
+        reputation: i32,
+    ) -> Result<bool, AccessBarrier> {
+        let has_license = inv.has_item("冒険者ギルド免許");
+        let has_reputation = reputation >= 10;
+
+        if !has_license && !has_reputation {
+            self.current_text = "宿屋の主人「すまないが、うちでは素性の知れないお方（評判不足、冒険者ギルド免許なし）を泊めるわけにはいかないんだ。…泊まる場所がないなら、外の洞穴で夜露をしのぐといい」".into();
+            self.learnable_spans = spans_for(&self.current_text, &["洞穴", "冒険者ギルド免許"]);
+            return Err(AccessBarrier::RequiresReputation {
+                faction: "王都アルカン".into(),
+                min_reputation: 10,
+            });
+        }
+
         if inv.spend_gold(INN_COST) {
             for m in members.iter_mut() {
                 m.hp = m.max_hp;
                 m.mp = m.max_mp;
             }
-            self.current_text = "宿屋の主人「まいど！ぐっすり休んでいきなよ」\n宿をとった。朝の光が差し込み、仲間全員のHPとMPが全快した！".into();
-            true
+            if has_license {
+                self.current_text = "宿屋の主人「まいど！冒険者ギルド免許を確認したよ。ここを君の正式な住所として登録しておこう。ぐっすり休んでいきな！」\n仲間全員のHPとMPが全快した！".into();
+            } else {
+                self.current_text = "宿屋の主人「おお、街での評判は聞いているよ！あんたなら大歓迎だ。ぐっすり休んでいきな！」\n仲間全員のHPとMPが全快した！".into();
+            }
+            self.learnable_spans = Vec::new();
+            Ok(true)
         } else {
             self.current_text = format!(
                 "宿屋の主人「おや、{}が足りないようだね。一泊{}{}だよ」",
                 CURRENCY_NAME, INN_COST, CURRENCY_NAME
             );
-            false
+            self.learnable_spans = Vec::new();
+            Ok(false)
         }
     }
 
@@ -598,9 +673,9 @@ mod tests {
             create_dummy_member("ミレイ", 5, 25, 2, 40),
         ];
 
-        // 宿泊成功
-        let success = session.rest_at_inn(&mut inv, &mut members);
-        assert!(success);
+        // 宿泊成功（評判10で身元確認OK）
+        let success = session.rest_at_inn(&mut inv, &mut members, 10);
+        assert_eq!(success, Ok(true));
         assert_eq!(inv.gold, 60 - INN_COST);
         assert_eq!(members[0].hp, 50);
         assert_eq!(members[0].mp, 10);
@@ -608,8 +683,8 @@ mod tests {
         assert_eq!(members[1].mp, 40);
 
         // フォリン不足で宿泊失敗
-        let success2 = session.rest_at_inn(&mut inv, &mut members);
-        assert!(!success2);
+        let success2 = session.rest_at_inn(&mut inv, &mut members, 10);
+        assert_eq!(success2, Ok(false));
         assert_eq!(inv.gold, 60 - INN_COST);
     }
 
@@ -697,6 +772,7 @@ mod tests {
             QuestionType::Where,
             "マンティコア関所",
             None,
+            0,
         );
         match resp {
             KnowledgeResponse::Answer { text } => {
@@ -715,7 +791,7 @@ mod tests {
         let mut session = DialogueSession::start(DialoguePartner::CheckpointGuard);
 
         // 「あなた」→「誰？」: NPC自身の素性
-        let resp_you = session.ask_query(&QuerySubject::You, None, QuestionType::Who, "関所", None);
+        let resp_you = session.ask_query(&QuerySubject::You, None, QuestionType::Who, "関所", None, 0);
         match resp_you {
             KnowledgeResponse::Answer { text } => {
                 assert!(text.contains("俺はこの関所を守る番人だ"));
@@ -724,7 +800,7 @@ mod tests {
         }
 
         // 「私」→「誰？」: 評判照会・記憶喪失ジョーク
-        let resp_me = session.ask_query(&QuerySubject::Me, None, QuestionType::Who, "関所", None);
+        let resp_me = session.ask_query(&QuerySubject::Me, None, QuestionType::Who, "関所", None, 0);
         match resp_me {
             KnowledgeResponse::Answer { text } => {
                 assert!(text.contains("おかわいそうに、記憶喪失なのですか？"));
@@ -742,7 +818,7 @@ mod tests {
             name: "マンティコア".into(),
             kind: TopicKind::Entity,
         };
-        let resp1 = session.ask_query(&manticore, None, QuestionType::What, "関所", None);
+        let resp1 = session.ask_query(&manticore, None, QuestionType::What, "関所", None, 0);
         match resp1 {
             KnowledgeResponse::Answer { text } => {
                 assert!(text.contains("お前新人か？"));
@@ -765,7 +841,7 @@ mod tests {
             name: "迂回路".into(),
             kind: TopicKind::Location,
         };
-        let resp2 = session.ask_query(&detour, None, QuestionType::Where, "関所", None);
+        let resp2 = session.ask_query(&detour, None, QuestionType::Where, "関所", None, 0);
         match resp2 {
             KnowledgeResponse::Answer { text } => {
                 assert!(text.contains("比較的マンティコアがいない道だ"));
@@ -774,7 +850,7 @@ mod tests {
         }
 
         // 3. マンティコアの弱点は何？（ポインタ発生）
-        let resp3 = session.ask_query(&manticore, Some("弱点"), QuestionType::What, "関所", None);
+        let resp3 = session.ask_query(&manticore, Some("弱点"), QuestionType::What, "関所", None, 0);
         match resp3 {
             KnowledgeResponse::Pointer { text, barrier } => {
                 assert!(text.contains("★★騎士団団長なら何か知っているかもしれん"));
@@ -793,7 +869,7 @@ mod tests {
             name: "★★騎士団団長".into(),
             kind: TopicKind::Person,
         };
-        let resp4 = session.ask_query(&commander, None, QuestionType::Where, "関所", None);
+        let resp4 = session.ask_query(&commander, None, QuestionType::Where, "関所", None, 0);
         match resp4 {
             KnowledgeResponse::Pointer { text, barrier } => {
                 assert!(text.contains("◇◇砦に赴任しているが、お前のようなやつにはお会いにならないだろうな"));
@@ -823,6 +899,7 @@ mod tests {
             QuestionType::What,
             "◇◇砦",
             Some(&empty_inv),
+            0,
         );
         match resp_no_intro {
             KnowledgeResponse::Pointer { text, barrier } => {
@@ -841,6 +918,7 @@ mod tests {
             QuestionType::What,
             "◇◇砦",
             Some(&ready_inv),
+            0,
         );
         match resp_with_intro {
             KnowledgeResponse::Answer { text } => {
@@ -854,6 +932,146 @@ mod tests {
             learned_words(&session),
             vec!["マンティコア".to_string(), "氷の魔術".to_string()]
         );
+    }
+
+    #[test]
+    fn test_scenario000_shipwrecked_to_licensed_inn_stay() {
+        // 1. 漂着：海岸/洞穴で目覚める。所持金わずか、評判ゼロ、免許なし
+        let mut inv = PlayerInventory {
+            gold: 50,
+            items: Vec::new(),
+            topics: Vec::new(),
+        };
+        let reputation = 0;
+        let mut members = vec![create_dummy_member("主人公", 5, 20, 0, 5)];
+
+        // 2. 身元不明のまま宿屋に行き、宿泊を試みる -> 評判不足・免許なしで門前払い！
+        let mut inn_session = DialogueSession::start(DialoguePartner::Inn);
+        let rest_attempt1 = inn_session.rest_at_inn(&mut inv, &mut members, reputation);
+        assert!(rest_attempt1.is_err());
+        assert_eq!(
+            rest_attempt1.unwrap_err(),
+            AccessBarrier::RequiresReputation {
+                faction: "王都アルカン".into(),
+                min_reputation: 10,
+            }
+        );
+        assert!(inn_session.current_text.contains("外の洞穴で夜露をしのぐといい"));
+        // 「冒険者ギルド免許」「洞穴」が下線語句になり、手動でおぼえられる
+        assert_eq!(
+            learned_words(&inn_session),
+            vec!["冒険者ギルド免許".to_string(), "洞穴".to_string()]
+        );
+        inv.learn_topic("冒険者ギルド免許");
+
+        // 3. 評判軸（RequiresReputation）の単体検証:
+        // もし街で善行を重ねて評判が10以上になれば、免許がなくても顔見知りとして泊まれる！
+        let high_reputation = 10;
+        let rest_with_rep = inn_session.rest_at_inn(&mut inv, &mut members, high_reputation);
+        assert_eq!(rest_with_rep, Ok(true));
+        assert!(inn_session.current_text.contains("街での評判は聞いているよ"));
+
+        // 4. 町の住人（Villager）に「ここ→どこ？」「冒険者ギルド→どこ？」をたずねる
+        let mut villager_session = DialogueSession::start(DialoguePartner::Villager);
+        let resp_here = villager_session.ask_query(
+            &QuerySubject::Here,
+            None,
+            QuestionType::Where,
+            "港町",
+            Some(&inv),
+            reputation,
+        );
+        match resp_here {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("ここは港町です"));
+                assert!(text.contains("冒険者ギルドをお探しですか？"));
+            }
+            _ => panic!("Expected Answer"),
+        }
+        assert_eq!(learned_words(&villager_session), vec!["冒険者ギルド".to_string()]);
+        inv.learn_topic("冒険者ギルド");
+
+        let guild_subject = QuerySubject::Topic {
+            name: "冒険者ギルド".into(),
+            kind: TopicKind::Location,
+        };
+        let resp_guild = villager_session.ask_query(
+            &guild_subject,
+            None,
+            QuestionType::Where,
+            "港町",
+            Some(&inv),
+            reputation,
+        );
+        match resp_guild {
+            KnowledgeResponse::Pointer { text, barrier } => {
+                assert!(text.contains("中央広場の宿屋の隣ですよ"));
+                assert!(barrier.is_none());
+            }
+            _ => panic!("Expected Pointer"),
+        }
+        assert_eq!(
+            learned_words(&villager_session),
+            vec!["冒険者ギルド".to_string(), "宿屋".to_string()]
+        );
+
+        // 5. 衛兵（Guard）に「冒険者ギルド免許」について尋ね、取得条件（衛兵の依頼）を知る
+        let mut guard_session = DialogueSession::start(DialoguePartner::Guard);
+        let license_subject = QuerySubject::Topic {
+            name: "冒険者ギルド免許".into(),
+            kind: TopicKind::Entity,
+        };
+        let resp_license = guard_session.ask_query(
+            &license_subject,
+            None,
+            QuestionType::What,
+            "港町",
+            Some(&inv),
+            reputation,
+        );
+        match resp_license {
+            KnowledgeResponse::Pointer { text, barrier } => {
+                assert!(text.contains("衛兵の依頼をこなせばギルドから免許が発行されるぜ"));
+                assert_eq!(
+                    barrier,
+                    Some(AccessBarrier::RequiresItem("冒険者ギルド免許".into()))
+                );
+            }
+            _ => panic!("Expected Pointer"),
+        }
+        assert_eq!(
+            learned_words(&guard_session),
+            vec!["冒険者ギルド免許".to_string(), "衛兵の依頼".to_string()]
+        );
+
+        // 6. 衛兵の依頼を数件こなした結果、第三者から免許（アイテム）が発行される
+        inv.add_item("冒険者ギルド免許");
+
+        // 7. 宿屋（Inn）に「冒険者ギルド免許」について尋ねる
+        let mut inn_session2 = DialogueSession::start(DialoguePartner::Inn);
+        let resp_inn_q = inn_session2.ask_query(
+            &license_subject,
+            None,
+            QuestionType::DoYouKnow,
+            "港町",
+            Some(&inv),
+            reputation,
+        );
+        match resp_inn_q {
+            KnowledgeResponse::Answer { text } => {
+                assert!(text.contains("君の正式な住所として登録して宿泊できるようになるよ"));
+            }
+            _ => panic!("Expected Answer"),
+        }
+
+        // 8. 再び宿泊アクション：評判ゼロのままでも、免許があるため住所登録が成立して宿泊成功！
+        inv.gold = 50; // 宿泊費用を補充
+        members[0].hp = 5;
+        let rest_success = inn_session2.rest_at_inn(&mut inv, &mut members, reputation);
+        assert_eq!(rest_success, Ok(true));
+        assert!(inn_session2.current_text.contains("冒険者ギルド免許を確認したよ"));
+        assert!(inn_session2.current_text.contains("君の正式な住所として登録"));
+        assert_eq!(members[0].hp, 20); // HP全回復！
     }
 
     fn learned_words(session: &DialogueSession) -> Vec<String> {
