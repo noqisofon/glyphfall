@@ -75,44 +75,39 @@ pub fn dialogue_underline_tick(
         (With<MessageHighlightNode>, Without<MessageUnderlineNode>),
     >,
 ) {
-    let (Ok(mut underline_text), Ok(mut highlight_text)) = (
-        underline_query.get_single_mut(),
-        highlight_query.get_single_mut(),
-    ) else {
-        return;
-    };
-
     let session = (*mode == AppMode::Dialogue || *mode == AppMode::Inn)
         .then(|| dialogue_res.0.as_ref())
         .flatten();
-    let Some(session) = session else {
-        *underline_text = Text::new("");
-        *highlight_text = Text::new("");
-        return;
-    };
 
     let fully_shown = typewriter_query
-        .get_single()
-        .map(|t| t.shown_chars >= t.full_text.chars().count())
-        .unwrap_or(false);
+        .iter()
+        .any(|t| t.shown_chars >= t.full_text.chars().count());
 
-    if fully_shown && !session.learnable_spans.is_empty() {
-        *underline_text = Text::new(build_underline_text(
-            &session.current_text,
-            &session.learnable_spans,
-        ));
+    let (underline_content, highlight_content) = if let Some(session) = session {
+        let u = if fully_shown && !session.learnable_spans.is_empty() {
+            build_underline_text(&session.current_text, &session.learnable_spans)
+        } else {
+            String::new()
+        };
+        let h = match session.stage {
+            DialogueStage::ChoosingLearnTarget { cursor } if fully_shown => session
+                .learnable_spans
+                .get(cursor)
+                .map(|span| build_highlight_text(&session.current_text, span))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        (u, h)
     } else {
-        *underline_text = Text::new("");
-    }
-
-    *highlight_text = match session.stage {
-        DialogueStage::ChoosingLearnTarget { cursor } if fully_shown => session
-            .learnable_spans
-            .get(cursor)
-            .map(|span| Text::new(build_highlight_text(&session.current_text, span)))
-            .unwrap_or_else(|| Text::new("")),
-        _ => Text::new(""),
+        (String::new(), String::new())
     };
+
+    for mut text in &mut underline_query {
+        *text = Text::new(underline_content.clone());
+    }
+    for mut text in &mut highlight_query {
+        *text = Text::new(highlight_content.clone());
+    }
 }
 
 pub fn monster_flash_tick(
@@ -141,7 +136,7 @@ pub fn update_message_window(
     mut query: Query<(&mut TypewriterMessage, &mut Text), With<MessageTextNode>>,
 ) {
     for event in events.read() {
-        if let Ok((mut type_msg, mut text)) = query.get_single_mut() {
+        for (mut type_msg, mut text) in &mut query {
             type_msg.full_text = event.0.clone();
             type_msg.shown_chars = 0;
             type_msg.timer.reset();

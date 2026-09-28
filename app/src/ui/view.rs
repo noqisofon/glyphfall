@@ -15,6 +15,16 @@ use crate::{
 };
 use bevy::prelude::*;
 
+pub fn is_dual_split_mode(mode: AppMode, dialogue: &Option<DialogueSession>) -> bool {
+    match mode {
+        AppMode::Inn => {
+            let stage = dialogue.as_ref().map(|s| s.stage).unwrap_or_default();
+            !matches!(stage, DialogueStage::ChoosingLearnTarget { .. })
+        }
+        _ => false,
+    }
+}
+
 pub fn format_status_header(
     party: &PartyState,
     mode: AppMode,
@@ -88,25 +98,25 @@ pub fn format_status_header(
                 match stage {
                     DialogueStage::Talking => {
                         header.push_str(&format!(
-                            "  [会話中: {}] 所持金: {}{} | [1]たずねる | [2]おぼえる | [3]はなれる\n",
+                            "  [会話中: {}] 所持金: {}{}\n",
                             partner_name, inv.gold, CURRENCY_UNIT
                         ));
                     }
                     DialogueStage::SelectingSubject { .. } => {
                         header.push_str(&format!(
-                            "  [会話中: {}] たずねる対象を選択中 | [W/S]対象選択 | [1]決定 | [3]戻る\n",
+                            "  [会話中: {}] たずねる対象を選択中\n",
                             partner_name
                         ));
                     }
                     DialogueStage::SelectingQuestion { .. } => {
                         header.push_str(&format!(
-                            "  [会話中: {}] 聞き方を選択中 | [W/S]聞き方選択 | [1]決定 | [3]戻る\n",
+                            "  [会話中: {}] 聞き方を選択中\n",
                             partner_name
                         ));
                     }
                     DialogueStage::ChoosingLearnTarget { .. } => {
                         header.push_str(&format!(
-                            "  [会話中: {}] 覚える言葉を選択中 | [W/S]候補選択 | [1]決定 | [3]やめる\n",
+                            "  [会話中: {}] 覚える言葉を選択中\n",
                             partner_name
                         ));
                     }
@@ -124,14 +134,14 @@ pub fn format_status_header(
             }
             AppMode::Shop => {
                 header.push_str(&format!(
-                    "  [道具屋・取引中: 道具屋の店主] 所持金: {}{} | [W/S]で商品選択 | [1]購入 | [3]店を出る\n",
+                    "  [道具屋・取引中: 道具屋の店主] 所持金: {}{}\n",
                     inv.gold, CURRENCY_UNIT
                 ));
             }
             AppMode::Inn => {
                 header.push_str(&format!(
-                    "  [宿屋・受付: 宿屋の主人] 所持金: {}{} | [1]宿泊(50{})で全快 | [3]宿を出る\n",
-                    inv.gold, CURRENCY_UNIT, CURRENCY_UNIT
+                    "  [宿屋・受付: 宿屋の主人] 所持金: {}{}\n",
+                    inv.gold, CURRENCY_UNIT
                 ));
             }
             AppMode::Battle => {
@@ -245,15 +255,9 @@ pub fn format_status_header(
                         .map(|s| !s.learnable_spans.is_empty())
                         .unwrap_or(false);
                     if has_learnable {
-                        header.push_str(&format!(
-                            "操作: [1/Enter]とまる({}{}) | [2]おぼえる | [3/Esc]宿を出る",
-                            INN_COST, CURRENCY_UNIT
-                        ));
+                        header.push_str("操作: [1]宿泊 | [2]おぼえる | [3]宿を出る");
                     } else {
-                        header.push_str(&format!(
-                            "操作: [1/Enter]とまる({}{}) | [3/Esc]宿を出る",
-                            INN_COST, CURRENCY_UNIT
-                        ));
+                        header.push_str("操作: [1]宿泊 | [3]宿を出る");
                     }
                 }
             }
@@ -406,7 +410,7 @@ pub fn format_left_window(
         AppMode::Shop => {
             let session = dialogue.as_ref();
             let selected = session.map(|s| s.selected_shop_index).unwrap_or(0);
-            let mut out = format!("【品物】(金:{}{})\n", inv.gold, CURRENCY_UNIT);
+            let mut out = "【品物】\n".to_string();
             for (idx, item) in SHOP_ITEMS.iter().enumerate() {
                 let cursor = if idx == selected { "▶" } else { " " };
                 out.push_str(&format!(
@@ -430,10 +434,15 @@ pub fn format_left_window(
                 }
                 out
             } else {
-                format!(
-                    "【宿屋・宿泊】\n一泊料金: 50{}\n所持金  : {}{}\n全員のHP/MP全快",
-                    CURRENCY_UNIT, inv.gold, CURRENCY_UNIT
-                )
+                let mut out = "【手帳】\n[覚えた話題]\n".to_string();
+                if inv.topics.is_empty() {
+                    out.push_str(" (話題なし)\n");
+                } else {
+                    for topic in inv.topics.iter().take(3) {
+                        out.push_str(&format!("・{}\n", topic));
+                    }
+                }
+                out
             }
         }
         AppMode::Town => {
@@ -582,7 +591,7 @@ pub fn format_right_window(
                         ""
                     };
                     format!(
-                        "[1]とまる({}{}){}\n[3]やめる",
+                        "【宿屋】\n[1]宿泊({}{})\n   (HP/MP全快){}\n[3]宿を出る",
                         INN_COST, CURRENCY_UNIT, learn_str
                     )
                 }
@@ -942,7 +951,7 @@ pub fn update_tri_split_windows_system(
                 &party,
             ));
         }
-        if let Ok(mut text) = right_query.get_single_mut() {
+        for mut text in &mut right_query {
             *text = Text::new(format_right_window(
                 *mode,
                 &dialogue.0,
@@ -950,5 +959,156 @@ pub fn update_tri_split_windows_system(
                 &battle,
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::party::PartyMember;
+    use crate::town::DialoguePartner;
+
+    fn create_test_party() -> PartyState {
+        PartyState {
+            selected_index: 0,
+            debug_mode: false,
+            members: vec![PartyMember::new_player("あなた").with_stats(20, 10)],
+        }
+    }
+
+    #[test]
+    fn test_is_dual_split_mode() {
+        let inn_session = DialogueSession::start(DialoguePartner::Inn);
+        assert!(is_dual_split_mode(AppMode::Inn, &Some(inn_session)));
+
+        let mut choosing_session = DialogueSession::start(DialoguePartner::Inn);
+        choosing_session.stage = DialogueStage::ChoosingLearnTarget { cursor: 0 };
+        assert!(!is_dual_split_mode(AppMode::Inn, &Some(choosing_session)));
+
+        assert!(!is_dual_split_mode(AppMode::Town, &None));
+        assert!(!is_dual_split_mode(AppMode::Dialogue, &None));
+        assert!(!is_dual_split_mode(AppMode::Shop, &None));
+    }
+
+    #[test]
+    fn test_inn_header_non_redundant() {
+        let party = create_test_party();
+        let town = TownState::new();
+        let mut inv = PlayerInventory::default();
+        inv.gold = 50;
+        let session = DialogueSession::start(DialoguePartner::Inn);
+        let header = format_status_header(
+            &party,
+            AppMode::Inn,
+            &town,
+            &inv,
+            &Some(session),
+            &CommandMenuState::default(),
+            &TravelState::default(),
+        );
+
+        // ヘッダー2行目に所持金が表示され、選択肢/料金(50G)は重複して含まれないこと
+        assert!(header.contains("[宿屋・受付: 宿屋の主人] 所持金: 50G"));
+        assert!(!header.contains("[1]宿泊(50G)で全快"));
+        assert!(!header.contains("| [3]宿を出る\n"));
+
+        // 操作行に料金(50G)の重複がなく、簡潔な操作表記であること
+        assert!(header.contains("操作: [1]宿泊 | [3]宿を出る"));
+        assert!(!header.contains("とまる(50G)"));
+    }
+
+    #[test]
+    fn test_inn_panels_non_redundant() {
+        let mut inv = PlayerInventory::default();
+        inv.gold = 50;
+        let session = DialogueSession::start(DialoguePartner::Inn);
+        let battle = BattleState::new(vec![]);
+        let party = create_test_party();
+
+        // 左パネルは一泊料金や所持金の重複がなく手帳の話題一覧であること
+        let left = format_left_window(
+            AppMode::Inn,
+            &inv,
+            &Some(session.clone()),
+            &CommandMenuState::default(),
+            TargetKind::Nothing,
+            &TravelState::default(),
+            &battle,
+            &party,
+        );
+        assert!(!left.contains("一泊料金: 50G"));
+        assert!(!left.contains("所持金  : 50G"));
+        assert!(left.contains("【手帳】"));
+
+        // 右パネルに宿泊料金と全快効果が集約されていること
+        let right = format_right_window(
+            AppMode::Inn,
+            &Some(session),
+            &CommandMenuState::default(),
+            &battle,
+        );
+        assert!(right.contains("【宿屋】"));
+        assert!(right.contains("[1]宿泊(50G)"));
+        assert!(right.contains("(HP/MP全快)"));
+        assert!(right.contains("[3]宿を出る"));
+    }
+
+    #[test]
+    fn test_shop_non_redundant() {
+        let party = create_test_party();
+        let town = TownState::new();
+        let mut inv = PlayerInventory::default();
+        inv.gold = 100;
+        let session = DialogueSession::start(DialoguePartner::Shop);
+        let header = format_status_header(
+            &party,
+            AppMode::Shop,
+            &town,
+            &inv,
+            &Some(session.clone()),
+            &CommandMenuState::default(),
+            &TravelState::default(),
+        );
+
+        // ヘッダー2行目に操作が重複していないこと
+        assert!(header.contains("[道具屋・取引中: 道具屋の店主] 所持金: 100G\n"));
+        assert!(!header.contains("| [W/S]で商品選択"));
+
+        // 左パネルに所持金が重複していないこと
+        let battle = BattleState::new(vec![]);
+        let left = format_left_window(
+            AppMode::Shop,
+            &inv,
+            &Some(session),
+            &CommandMenuState::default(),
+            TargetKind::Nothing,
+            &TravelState::default(),
+            &battle,
+            &party,
+        );
+        assert!(left.starts_with("【品物】\n"));
+        assert!(!left.contains("(金:100G)"));
+    }
+
+    #[test]
+    fn test_ui_scale_ratio_calculation() {
+        let base_w = 960.0_f32;
+        let base_h = 640.0_f32;
+
+        // 960x640: 等倍
+        let scale_960 = (960.0 / base_w).min(640.0 / base_h);
+        assert!((scale_960 - 1.0).abs() < 0.001);
+
+        // 1920x1080 (16:9 Full HD): 縦幅基準で 1.6875倍に拡大
+        let scale_1080p = (1920.0 / base_w).min(1080.0 / base_h);
+        assert!((scale_1080p - 1.6875).abs() < 0.001);
+
+        // 2560x1440 (16:9 QHD): 縦幅基準で 2.25倍に拡大
+        let scale_1440p = (2560.0 / base_w).min(1440.0 / base_h);
+        assert!((scale_1440p - 2.25).abs() < 0.001);
+
+        // 1280x720 (16:9 720p): 縦幅基準で 1.125倍に拡大
+        let scale_720p = (1280.0 / base_w).min(720.0 / base_h);
+        assert!((scale_720p - 1.125).abs() < 0.001);
     }
 }

@@ -149,6 +149,7 @@ fn main() {
         }))
         .add_event::<ShowMessage>()
         .add_systems(Startup, spawn_camera)
+        .add_systems(Update, ui::update_ui_scale_system)
         .add_systems(OnEnter(AppScreen::Playing), ui::setup_playing_screen)
         .add_systems(
             Update,
@@ -175,6 +176,7 @@ fn main() {
                     ui::update_battle_monster_display_system,
                     ui::update_travel_simulation_display_system,
                     ui::update_center_window_visibility_system,
+                    ui::update_bottom_window_layout_system,
                 ),
             )
                 .chain()
@@ -196,7 +198,7 @@ fn handle_common_input(
 ) {
     // [Space]: タイプライターの文字送りをスキップ
     if keyboard.just_pressed(KeyCode::Space) {
-        if let Ok((mut type_msg, mut text)) = message_query.get_single_mut() {
+        for (mut type_msg, mut text) in &mut message_query {
             type_msg.shown_chars = type_msg.full_text.chars().count();
             *text = Text::new(type_msg.full_text.clone());
         }

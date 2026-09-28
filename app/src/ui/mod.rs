@@ -9,7 +9,7 @@ use crate::{
     flow::NewGameConfig,
     party::{PartyState, PartyStateRes, PlayerInventory, PlayerInventoryRes},
     town::{TownState, TownStateRes},
-    AppMode, CommandMenuState, TravelState,
+    AppMode, CommandMenuState, TravelState, ActiveDialogue,
 };
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -39,7 +39,7 @@ pub mod palette {
 
 // フォント設定
 pub const FONT_PATH: &str = "fonts/BizinGothic-Regular.ttf";
-pub const CELL_PX: f32 = 18.0;
+pub const CELL_PX: f32 = 19.5;
 
 #[derive(Component)]
 pub struct TypewriterMessage {
@@ -78,6 +78,12 @@ pub struct BattleMonsterTextNode;
 pub struct TravelSimulationTextNode;
 
 #[derive(Component)]
+pub struct TriSplitRowNode;
+
+#[derive(Component)]
+pub struct DualSplitRowNode;
+
+#[derive(Component)]
 pub struct PlayingRoot;
 
 #[derive(SystemParam)]
@@ -108,8 +114,8 @@ pub fn setup_playing_screen(
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(8.0),
-                padding: UiRect::all(Val::Px(16.0)),
+                row_gap: Val::Px(5.0),
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
                 ..default()
             },
             PlayingRoot,
@@ -274,45 +280,83 @@ pub fn spawn_tri_split_window(
     party: &PartyState,
     default_msg: &str,
 ) {
-    let total_width = (15 + 22 + 11) as f32 * CELL_PX; // 48列 = 864.0 px
+    let total_width = (15 + 22 + 11) as f32 * CELL_PX; // 48列 = 936.0 px (at 19.5)
 
     parent
         .spawn(Node {
             width: Val::Px(total_width),
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::FlexStart,
             ..default()
         })
-        .with_children(|row| {
-            // 左ウィンドウ: 13列 + 枠2列 = 15列 (270px)
-            spawn_sub_window::<LeftWindowTextNode>(
-                row,
-                font.clone(),
-                13,
-                5,
-                &format_left_window(
-                    AppMode::Town,
-                    inv,
-                    &None,
-                    &CommandMenuState::default(),
-                    crate::town::TargetKind::Nothing,
-                    &TravelState::default(),
-                    battle,
-                    party,
-                ),
-            );
+        .with_children(|wrapper| {
+            // 3分割レイアウト行（多段階対話・探索・戦闘・旅など）
+            wrapper
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::FlexStart,
+                        display: Display::Flex,
+                        ..default()
+                    },
+                    TriSplitRowNode,
+                ))
+                .with_children(|row| {
+                    // 左ウィンドウ: 13列 + 枠2列 = 15列 (292.5px)
+                    spawn_sub_window::<LeftWindowTextNode>(
+                        row,
+                        font.clone(),
+                        13,
+                        5,
+                        &format_left_window(
+                            AppMode::Town,
+                            inv,
+                            &None,
+                            &CommandMenuState::default(),
+                            crate::town::TargetKind::Nothing,
+                            &TravelState::default(),
+                            battle,
+                            party,
+                        ),
+                    );
 
-            // 中央メッセージウィンドウ: 20列 + 枠2列 = 22列 (396px)
-            spawn_sub_message_window(row, font.clone(), 20, 5, default_msg);
+                    // 中央メッセージウィンドウ: 20列 + 枠2列 = 22列 (429px)
+                    spawn_sub_message_window(row, font.clone(), 20, 5, default_msg);
 
-            // 右行動ウィンドウ: 9列 + 枠2列 = 11列 (198px)
-            spawn_sub_window::<RightWindowTextNode>(
-                row,
-                font.clone(),
-                9,
-                5,
-                &format_right_window(AppMode::Town, &None, &CommandMenuState::default(), battle),
-            );
+                    // 右行動ウィンドウ: 9列 + 枠2列 = 11列 (214.5px)
+                    spawn_sub_window::<RightWindowTextNode>(
+                        row,
+                        font.clone(),
+                        9,
+                        5,
+                        &format_right_window(AppMode::Town, &None, &CommandMenuState::default(), battle),
+                    );
+                });
+
+            // 2分割レイアウト行（宿屋などの単純二択・結果表示用：左中央結合 37列 + 右行動 11列）
+            wrapper
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::FlexStart,
+                        display: Display::None,
+                        ..default()
+                    },
+                    DualSplitRowNode,
+                ))
+                .with_children(|row| {
+                    // 左・中央結合メッセージウィンドウ: 35列 + 枠2列 = 37列 (721.5px)
+                    spawn_sub_message_window(row, font.clone(), 35, 5, default_msg);
+
+                    // 右行動ウィンドウ: 9列 + 枠2列 = 11列 (214.5px)
+                    spawn_sub_window::<RightWindowTextNode>(
+                        row,
+                        font.clone(),
+                        9,
+                        5,
+                        &format_right_window(AppMode::Town, &None, &CommandMenuState::default(), battle),
+                    );
+                });
         });
 }
 
@@ -476,6 +520,48 @@ pub fn spawn_box_border(
                     TextColor(palette::FRAME),
                 ));
             }
+        }
+    }
+}
+
+pub fn update_bottom_window_layout_system(
+    mode: Res<AppMode>,
+    dialogue: Res<ActiveDialogue>,
+    mut tri_query: Query<&mut Node, (With<TriSplitRowNode>, Without<DualSplitRowNode>)>,
+    mut dual_query: Query<&mut Node, (With<DualSplitRowNode>, Without<TriSplitRowNode>)>,
+) {
+    if !mode.is_changed() && !dialogue.is_changed() {
+        return;
+    }
+    let use_dual = is_dual_split_mode(*mode, &dialogue.0);
+    for mut node in &mut tri_query {
+        node.display = if use_dual {
+            Display::None
+        } else {
+            Display::Flex
+        };
+    }
+    for mut node in &mut dual_query {
+        node.display = if use_dual {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+}
+
+pub fn update_ui_scale_system(
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut ui_scale: ResMut<UiScale>,
+) {
+    if let Ok(window) = windows.get_single() {
+        let base_width = 960.0_f32;
+        let base_height = 640.0_f32;
+        let scale_w = window.width() / base_width;
+        let scale_h = window.height() / base_height;
+        let scale = scale_w.min(scale_h).max(0.5);
+        if (ui_scale.0 - scale).abs() > 0.002 {
+            ui_scale.0 = scale;
         }
     }
 }
