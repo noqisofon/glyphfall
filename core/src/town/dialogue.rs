@@ -650,6 +650,8 @@ impl DialogueSession {
             }
 
             // --- 7. 封魔の迷宮クエスト（旧来の話題振り）へのフォールバック ---
+            // 暫定仕様: 旧返答は聞き方を区別しないため、「誰？」でも同じ答えを返す。
+            // 聞き方ごとの返答表（知識グラフ化）に置き換える際に見直すこと。
             (_, QuerySubject::Topic { name, .. }, None, _) => {
                 if let Some((text, words)) = self.legacy_topic_reply(name) {
                     self.learnable_spans = spans_for(&text, words);
@@ -1227,6 +1229,8 @@ mod tests {
         assert_eq!(members[0].hp, 20); // HP全回復！
     }
 
+    /// 暫定仕様のテスト: 旧返答へのフォールバックで迷宮クエストのヒントが聞けることだけを固定する。
+    /// 聞き方ごとの返答表に置き換える際は、このテストごと見直すこと。
     #[test]
     fn test_ask_query_falls_back_to_legacy_dungeon_topics() {
         let mut guard = DialogueSession::start(DialoguePartner::Guard);
