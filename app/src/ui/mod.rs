@@ -456,6 +456,7 @@ pub fn spawn_sub_message_window(
                 },
                 TextColor(palette::FRAME),
                 MessageUnderlineNode,
+                OverlayState::default(),
             ));
 
             grid.spawn((
@@ -473,6 +474,7 @@ pub fn spawn_sub_message_window(
                 },
                 TextColor(palette::TEXT_HIGHLIGHT),
                 MessageHighlightNode,
+                OverlayState::default(),
             ));
         });
 }
