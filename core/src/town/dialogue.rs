@@ -343,91 +343,83 @@ impl DialogueSession {
         // 新しい話題を振ったら、進行中の「おぼえる」候補選択は必ずキャンセルする。
         self.stage = DialogueStage::Talking;
 
-        match self.partner {
-            DialoguePartner::Guard => match topic {
-                "王都アルカン" => {
-                    self.current_text = "王都衛兵「王都アルカンは平和な街だ。だが南東の地下迷宮だけは絶対近寄るなよ」".into();
-                    self.learnable_spans = Vec::new();
-                }
-                "封魔の迷宮" => {
-                    self.current_text = "王都衛兵「かつて大魔王軍を封じた迷宮だ。奥深くには封印の祭壇があると言われている…」".into();
-                    self.learnable_spans = spans_for(&self.current_text, &["封印の祭壇"]);
-                }
-                "封印の祭壇" => {
-                    self.current_text = "王都衛兵「祭壇の封印を解くには、古の光のオーブが必要だと古文書に記されているらしい」".into();
-                    self.learnable_spans = spans_for(&self.current_text, &["光のオーブ"]);
-                }
-                _ => {
-                    self.current_text = format!(
-                        "王都衛兵「『{}』だと？…すまんが俺の知るところではないな」",
-                        topic
-                    );
-                    self.learnable_spans = Vec::new();
-                }
-            },
-            DialoguePartner::Tavern => match topic {
-                "封魔の迷宮" => {
-                    self.current_text = "呑兵衛「ヒック…夜になると地下から『魔物の咆哮』が聞こえてくるんだよ…不気味だぜ」".into();
-                    self.learnable_spans = spans_for(&self.current_text, &["魔物の咆哮"]);
-                }
-                "封印の祭壇" => {
-                    self.current_text = "呑兵衛「祭壇か！そういや爺さんが光のオーブを古物商に売っちまったとか言ってたな…」".into();
-                    self.learnable_spans = spans_for(&self.current_text, &["光のオーブ"]);
-                }
-                "光のオーブ" => {
-                    self.current_text = "呑兵衛「オーブなら、裏路地にいる怪しい男がヤバいルートを握ってるらしいぜ…」".into();
-                    self.learnable_spans = spans_for(&self.current_text, &["裏の抜け道"]);
-                }
-                _ => {
-                    self.current_text =
-                        format!("呑兵衛「『{}』かぁ？知らねえな！酒がうめえ！」", topic);
-                    self.learnable_spans = Vec::new();
-                }
-            },
-            DialoguePartner::Suspicious => match topic {
-                "光のオーブ" => {
-                    self.current_text = "怪しい男「ヒヒッ…オーブの話かい？地下迷宮の宝箱に隠された銀の鍵があれば手に入るぜ…」".into();
-                    self.learnable_spans = spans_for(&self.current_text, &["地下迷宮", "銀の鍵"]);
-                }
-                "銀の鍵" => {
-                    self.current_text =
-                        "怪しい男「迷宮の北の宝物庫だ。鉄格子の奥の宝箱に入ってるはずだぜ…ヒヒッ」"
-                            .into();
-                    self.learnable_spans = Vec::new();
-                }
-                "裏の抜け道" => {
-                    self.current_text = "怪しい男「裏壁の崩れかけのレンガを押せば、見張りを通らずに裏口へ行けるのさ」".into();
-                    self.learnable_spans = Vec::new();
-                }
-                _ => {
-                    self.current_text = format!(
-                        "怪しい男「ヒヒッ…『{}』かい？あっしには関係ねえ話だな」",
-                        topic
-                    );
-                    self.learnable_spans = Vec::new();
-                }
-            },
-            DialoguePartner::Villager => match topic {
-                "王都アルカン" => {
-                    self.current_text = "街の女性「中央の噴水広場は憩いの場なんです。夜は少し冷えますから気をつけて」".into();
-                    self.learnable_spans = Vec::new();
-                }
-                "封魔の迷宮" => {
-                    self.current_text = "街の女性「きゃあっ！そんな恐ろしい迷宮、お願いですから近づかないでください！」".into();
-                    self.learnable_spans = Vec::new();
-                }
-                _ => {
-                    self.current_text =
-                        format!("街の女性「『{}』ですか？私にはよくわかりませんね…」", topic);
-                    self.learnable_spans = Vec::new();
-                }
-            },
-            _ => {
-                self.current_text =
-                    format!("「『{}』についてですね。よく覚えておきましょう」", topic);
-                self.learnable_spans = Vec::new();
-            }
+        if let Some((text, words)) = self.legacy_topic_reply(topic) {
+            self.learnable_spans = spans_for(&text, words);
+            self.current_text = text;
+            return;
         }
+
+        self.current_text = match self.partner {
+            DialoguePartner::Guard => format!(
+                "王都衛兵「『{}』だと？…すまんが俺の知るところではないな」",
+                topic
+            ),
+            DialoguePartner::Tavern => {
+                format!("呑兵衛「『{}』かぁ？知らねえな！酒がうめえ！」", topic)
+            }
+            DialoguePartner::Suspicious => format!(
+                "怪しい男「ヒヒッ…『{}』かい？あっしには関係ねえ話だな」",
+                topic
+            ),
+            DialoguePartner::Villager => {
+                format!("街の女性「『{}』ですか？私にはよくわかりませんね…」", topic)
+            }
+            _ => format!("「『{}』についてですね。よく覚えておきましょう」", topic),
+        };
+        self.learnable_spans = Vec::new();
+    }
+
+    /// 封魔の迷宮クエスト（旧来の話題振り）の固定返答。
+    /// 返答テキストと下線候補の語句を返す。該当しなければ None。
+    fn legacy_topic_reply(&self, topic: &str) -> Option<(String, &'static [&'static str])> {
+        let (text, words): (&str, &'static [&'static str]) = match (self.partner, topic) {
+            (DialoguePartner::Guard, "王都アルカン") => (
+                "王都衛兵「王都アルカンは平和な街だ。だが南東の地下迷宮だけは絶対近寄るなよ」",
+                &[],
+            ),
+            (DialoguePartner::Guard, "封魔の迷宮") => (
+                "王都衛兵「かつて大魔王軍を封じた迷宮だ。奥深くには封印の祭壇があると言われている…」",
+                &["封印の祭壇"],
+            ),
+            (DialoguePartner::Guard, "封印の祭壇") => (
+                "王都衛兵「祭壇の封印を解くには、古の光のオーブが必要だと古文書に記されているらしい」",
+                &["光のオーブ"],
+            ),
+            (DialoguePartner::Tavern, "封魔の迷宮") => (
+                "呑兵衛「ヒック…夜になると地下から『魔物の咆哮』が聞こえてくるんだよ…不気味だぜ」",
+                &["魔物の咆哮"],
+            ),
+            (DialoguePartner::Tavern, "封印の祭壇") => (
+                "呑兵衛「祭壇か！そういや爺さんが光のオーブを古物商に売っちまったとか言ってたな…」",
+                &["光のオーブ"],
+            ),
+            (DialoguePartner::Tavern, "光のオーブ") => (
+                "呑兵衛「オーブなら、裏路地にいる怪しい男がヤバいルートを握ってるらしいぜ…」",
+                &["裏の抜け道"],
+            ),
+            (DialoguePartner::Suspicious, "光のオーブ") => (
+                "怪しい男「ヒヒッ…オーブの話かい？地下迷宮の宝箱に隠された銀の鍵があれば手に入るぜ…」",
+                &["地下迷宮", "銀の鍵"],
+            ),
+            (DialoguePartner::Suspicious, "銀の鍵") => (
+                "怪しい男「迷宮の北の宝物庫だ。鉄格子の奥の宝箱に入ってるはずだぜ…ヒヒッ」",
+                &[],
+            ),
+            (DialoguePartner::Suspicious, "裏の抜け道") => (
+                "怪しい男「裏壁の崩れかけのレンガを押せば、見張りを通らずに裏口へ行けるのさ」",
+                &[],
+            ),
+            (DialoguePartner::Villager, "王都アルカン") => (
+                "街の女性「中央の噴水広場は憩いの場なんです。夜は少し冷えますから気をつけて」",
+                &[],
+            ),
+            (DialoguePartner::Villager, "封魔の迷宮") => (
+                "街の女性「きゃあっ！そんな恐ろしい迷宮、お願いですから近づかないでください！」",
+                &[],
+            ),
+            _ => return None,
+        };
+        Some((text.to_string(), words))
     }
 
     /// 名詞先行型「たずねる」コマンド（ADR-0028）
@@ -657,7 +649,19 @@ impl DialogueSession {
                 }
             }
 
-            // --- 7. 該当なし（完全な未知） ---
+            // --- 7. 封魔の迷宮クエスト（旧来の話題振り）へのフォールバック ---
+            // 暫定仕様: 旧返答は聞き方を区別しないため、「誰？」でも同じ答えを返す。
+            // 聞き方ごとの返答表（知識グラフ化）に置き換える際に見直すこと。
+            (_, QuerySubject::Topic { name, .. }, None, _) => {
+                if let Some((text, words)) = self.legacy_topic_reply(name) {
+                    self.learnable_spans = spans_for(&text, words);
+                    self.current_text = text.clone();
+                    return KnowledgeResponse::Answer { text };
+                }
+                KnowledgeResponse::Unknown
+            }
+
+            // --- 8. 該当なし（完全な未知） ---
             _ => KnowledgeResponse::Unknown,
         };
 
@@ -1223,6 +1227,53 @@ mod tests {
             .current_text
             .contains("君の正式な住所として登録"));
         assert_eq!(members[0].hp, 20); // HP全回復！
+    }
+
+    /// 暫定仕様のテスト: 旧返答へのフォールバックで迷宮クエストのヒントが聞けることだけを固定する。
+    /// 聞き方ごとの返答表に置き換える際は、このテストごと見直すこと。
+    #[test]
+    fn test_ask_query_falls_back_to_legacy_dungeon_topics() {
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+        let resp = guard.ask_query(
+            &QuerySubject::from_topic_name("封魔の迷宮"),
+            None,
+            QuestionType::What,
+            "王都アルカン",
+            None,
+            0,
+        );
+        assert!(matches!(resp, KnowledgeResponse::Answer { .. }));
+        assert!(guard.current_text.contains("封印の祭壇"));
+        assert_eq!(learned_words(&guard), vec!["封印の祭壇".to_string()]);
+
+        let mut suspicious = DialogueSession::start(DialoguePartner::Suspicious);
+        let resp = suspicious.ask_query(
+            &QuerySubject::from_topic_name("光のオーブ"),
+            None,
+            QuestionType::Where,
+            "王都アルカン",
+            None,
+            0,
+        );
+        assert!(matches!(resp, KnowledgeResponse::Answer { .. }));
+        assert_eq!(
+            learned_words(&suspicious),
+            vec!["地下迷宮".to_string(), "銀の鍵".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_guard_request_who_is_unknown() {
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+        let resp = guard.ask_query(
+            &QuerySubject::from_topic_name("衛兵の依頼"),
+            None,
+            QuestionType::Who,
+            "王都アルカン",
+            None,
+            0,
+        );
+        assert_eq!(resp, KnowledgeResponse::Unknown);
     }
 
     #[test]
