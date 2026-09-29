@@ -80,7 +80,7 @@ pub fn build_highlight_segments(text: &str, span: &LearnableSpan) -> Vec<Overlay
     split_overlay(text, |i| i >= span.start && i < span.end, |c, _| c)
 }
 
-/// 重ね描きノードの子`TextSpan`を`segments`で作り直す。内容が変わっていなければ何もしない。
+/// 重ね描きノードの子`TextSpan`を`segments`で作り直す。
 fn apply_overlay(
     commands: &mut Commands,
     entity: Entity,
@@ -90,9 +90,6 @@ fn apply_overlay(
     color: Color,
     segments: Vec<OverlaySegment>,
 ) {
-    if state.0 == segments {
-        return;
-    }
     // 子の`TextSpan`を入れ替えただけでは再レイアウトされず、古いグリフが残ることがあるため、
     // 親の`Text`も変更済みにして作り直させる。
     root.set_changed();
@@ -167,26 +164,30 @@ pub fn dialogue_underline_tick(
     };
 
     for (entity, mut root, font, color, mut state) in &mut underline_query {
-        apply_overlay(
-            &mut commands,
-            entity,
-            &mut root,
-            &mut state,
-            font,
-            color.0,
-            underline.clone(),
-        );
+        if state.0 != underline {
+            apply_overlay(
+                &mut commands,
+                entity,
+                &mut root,
+                &mut state,
+                font,
+                color.0,
+                underline.clone(),
+            );
+        }
     }
     for (entity, mut root, font, color, mut state) in &mut highlight_query {
-        apply_overlay(
-            &mut commands,
-            entity,
-            &mut root,
-            &mut state,
-            font,
-            color.0,
-            highlight.clone(),
-        );
+        if state.0 != highlight {
+            apply_overlay(
+                &mut commands,
+                entity,
+                &mut root,
+                &mut state,
+                font,
+                color.0,
+                highlight.clone(),
+            );
+        }
     }
 }
 
