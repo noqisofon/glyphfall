@@ -394,7 +394,7 @@ impl DialogueSession {
                 &["光のオーブ"],
             ),
             (DialoguePartner::Tavern, "光のオーブ") => (
-                "呑兵衛「オーブなら、裏路地にいる怪しい男がヤバいルートを握ってるらしいぜ…」",
+                "呑兵衛「オーブなら、裏路地にいる怪しい男がヤバい裏の抜け道を握ってるらしいぜ…」",
                 &["裏の抜け道"],
             ),
             (DialoguePartner::Suspicious, "光のオーブ") => (
@@ -1325,6 +1325,76 @@ mod tests {
             }
             _ => panic!("Expected Answer"),
         }
+    }
+
+    /// 旧来の固定返答が宣言した下線語句は、必ず返答本文に含まれていること。
+    /// （`spans_for`は見つからない語を黙って捨てるため、本文と語句がズレると
+    /// 覚えられない語が生じ、会話チェーンが途切れる。）
+    #[test]
+    fn test_legacy_reply_words_all_appear_in_text() {
+        let partners = [
+            DialoguePartner::Guard,
+            DialoguePartner::Tavern,
+            DialoguePartner::Suspicious,
+            DialoguePartner::Villager,
+        ];
+        let topics = [
+            "王都アルカン",
+            "封魔の迷宮",
+            "封印の祭壇",
+            "光のオーブ",
+            "銀の鍵",
+            "裏の抜け道",
+        ];
+        let mut checked = 0;
+        for partner in partners {
+            let session = DialogueSession::start(partner);
+            for topic in topics {
+                if let Some((text, words)) = session.legacy_topic_reply(topic) {
+                    checked += 1;
+                    for word in words {
+                        assert!(
+                            text.contains(word),
+                            "{partner:?}/{topic}: 語句「{word}」が本文に無い: {text}"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(checked >= 10, "固定返答の網羅数が想定より少ない: {checked}");
+    }
+
+    /// 封魔の迷宮クエストの聞き込みチェーンが「裏の抜け道」まで途切れず進められること。
+    #[test]
+    fn test_orb_chain_reaches_secret_passage() {
+        // 呑兵衛に「光のオーブ」を聞く → 「裏の抜け道」を覚えられる
+        let mut tavern = DialogueSession::start(DialoguePartner::Tavern);
+        tavern.ask_topic("光のオーブ");
+        assert_eq!(learned_words(&tavern), vec!["裏の抜け道".to_string()]);
+
+        // 怪しい男に「裏の抜け道」を聞ける（ask_query経路でも同様）
+        let mut suspicious = DialogueSession::start(DialoguePartner::Suspicious);
+        let resp = suspicious.ask_query(
+            &QuerySubject::from_topic_name("裏の抜け道"),
+            None,
+            QuestionType::What,
+            "王都アルカン",
+            None,
+            0,
+        );
+        assert!(matches!(resp, KnowledgeResponse::Answer { .. }));
+        assert!(suspicious.current_text.contains("見張りを通らずに裏口へ"));
+
+        let mut tavern_q = DialogueSession::start(DialoguePartner::Tavern);
+        tavern_q.ask_query(
+            &QuerySubject::from_topic_name("光のオーブ"),
+            None,
+            QuestionType::What,
+            "王都アルカン",
+            None,
+            0,
+        );
+        assert_eq!(learned_words(&tavern_q), vec!["裏の抜け道".to_string()]);
     }
 
     fn learned_words(session: &DialogueSession) -> Vec<String> {
