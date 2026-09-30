@@ -11,7 +11,7 @@ use crate::{
         QUESTION_TYPES,
     },
     ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
-    TravelState, SHOP_ITEMS,
+    TravelState, DEBUG_KEYS, SHOP_ITEMS,
 };
 use bevy::prelude::*;
 
@@ -213,7 +213,11 @@ pub fn format_status_header(
 
     match mode {
         AppMode::Town => {
-            header.push_str("操作: [WASD]移動 | [Z]コマンド | [L]松明切替 | [B]戦闘切替 | [Tab]仲間切替 | [Space]スキップ");
+            header.push_str("操作: [WASD]移動 | [Z]コマンド | [L]松明切替 | ");
+            if DEBUG_KEYS {
+                header.push_str("[B]戦闘切替 | ");
+            }
+            header.push_str("[Tab]仲間切替 | [Space]スキップ");
         }
         AppMode::Interact => match command_menu.stage {
             CommandMenuStage::ChoosingCommand => {
@@ -260,9 +264,10 @@ pub fn format_status_header(
             }
         }
         AppMode::Battle => {
-            header.push_str(
-                "操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行 | [N]敵切替 | [B]街へ帰還",
-            );
+            header.push_str("操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行");
+            if DEBUG_KEYS {
+                header.push_str(" | [N]敵切替 | [B]街へ帰還");
+            }
         }
         AppMode::Travel => {
             if let Some(sim) = &travel.sim {
@@ -595,13 +600,17 @@ pub fn format_right_window(
                 }
             }
         }
-        AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
+        AppMode::Town if DEBUG_KEYS => {
+            "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into()
+        }
+        AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間".into(),
         AppMode::Battle => match &battle.phase {
             BattlePhase::CommandInput { member_cursor } => {
-                if *member_cursor == 0 {
-                    "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into()
-                } else {
-                    "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into()
+                match (*member_cursor == 0, DEBUG_KEYS) {
+                    (true, true) => "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into(),
+                    (true, false) => "[1-5]行動\n\n(あなた手番)".into(),
+                    (false, true) => "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into(),
+                    (false, false) => "[1-4]指示\n[Esc]戻る\n\n(仲間手番)".into(),
                 }
             }
             BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),

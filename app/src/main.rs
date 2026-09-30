@@ -21,6 +21,10 @@ pub use town::{
 };
 pub use ui::palette;
 
+/// デバッグ用キー（戦闘開始[B]・戦闘離脱[B]・敵切替[N]）を有効にするか。
+/// リリースビルドでは無効（戦闘を無条件に離脱できると「にげる」や敗北が無意味になるため）。
+pub const DEBUG_KEYS: bool = cfg!(debug_assertions);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Resource)]
 pub enum AppMode {
     Town,

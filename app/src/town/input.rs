@@ -5,7 +5,7 @@ use super::{
 };
 use crate::event::{SuddenEventCategory, SuddenEventHistoryRes, SuddenEventRegistryRes};
 use crate::party::{PlayerInventoryRes, CURRENCY_UNIT};
-use crate::ActiveDialogue;
+use crate::{ActiveDialogue, DEBUG_KEYS};
 use crate::{AppMode, CommandMenuStage, CommandMenuState, PartyStateRes, ShowMessage, TravelState};
 use bevy::prelude::*;
 use rand::thread_rng;
@@ -93,8 +93,8 @@ pub fn handle_town_input(
         msg_events.send(ShowMessage("コマンドを選んでください。".into()));
     }
 
-    // [B]: 戦闘テストへ突入
-    if keyboard.just_pressed(KeyCode::KeyB) {
+    // [B]: 戦闘テストへ突入（デバッグビルド限定）
+    if DEBUG_KEYS && keyboard.just_pressed(KeyCode::KeyB) {
         *mode = AppMode::Battle;
         dialogue_res.0 = None;
         msg_events.send(ShowMessage(
