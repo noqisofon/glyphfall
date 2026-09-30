@@ -5,7 +5,10 @@ use crate::{
     DEBUG_KEYS,
 };
 use bevy::prelude::*;
-use glyphfall_core::party::{PartyMember, PlayerSkills};
+use glyphfall_core::party::{PartyMember, PlayerInventory, PlayerSkills};
+
+/// 戦闘中「どうぐ」で使う回復アイテム名
+const HERB_ITEM: &str = "やくそう";
 use rand::thread_rng;
 
 fn next_alive_member(members: &[PartyMember], start_idx: usize) -> Option<usize> {
@@ -15,11 +18,17 @@ fn next_alive_member(members: &[PartyMember], start_idx: usize) -> Option<usize>
 fn start_turn_resolution(
     battle: &mut BattleStateRes,
     members: &mut [PartyMember],
+    inv: &mut PlayerInventory,
     skills: &PlayerSkills,
     rng: &mut impl rand::Rng,
     msg_events: &mut EventWriter<ShowMessage>,
 ) {
     battle.build_turn_resolution(members, skills, rng);
+    // やくそうは、ターンが確定して解決に入る時点で消費する。
+    // 選択時に消費すると、仲間の指示選択で[Esc]で戻った場合に草だけ失われてしまう。
+    if battle.player_action == Some(PlayerBattleAction::UseItem) {
+        inv.remove_item(HERB_ITEM);
+    }
     battle.apply_step_effects(0, members);
     if let Some(first_step) = battle.turn_steps.first() {
         let step_msg = first_step.message.clone();
@@ -86,7 +95,7 @@ pub fn handle_battle_input(
                 } else if keyboard.just_pressed(KeyCode::Digit2) {
                     Some(PlayerBattleAction::Defend)
                 } else if keyboard.just_pressed(KeyCode::Digit3) {
-                    if inv.remove_item("やくそう") {
+                    if inv.has_item(HERB_ITEM) {
                         Some(PlayerBattleAction::UseItem)
                     } else {
                         msg_events.send(ShowMessage(
@@ -119,6 +128,7 @@ pub fn handle_battle_input(
                         start_turn_resolution(
                             &mut battle,
                             &mut party.members,
+                            &mut inv,
                             &player.skills,
                             &mut rng,
                             &mut msg_events,
@@ -159,6 +169,7 @@ pub fn handle_battle_input(
                         start_turn_resolution(
                             &mut battle,
                             &mut party.members,
+                            &mut inv,
                             &player.skills,
                             &mut rng,
                             &mut msg_events,
@@ -343,5 +354,68 @@ mod tests {
                 "{key:?}"
             );
         }
+    }
+
+    fn command_app() -> App {
+        let mut app = defeat_app();
+        {
+            let mut party = app.world_mut().resource_mut::<PartyStateRes>();
+            party.members[0].hp = 20;
+            party
+                .members
+                .push(PartyMember::new_player("仲間").with_stats(20, 0));
+        }
+        app.world_mut().resource_mut::<BattleStateRes>().phase =
+            BattlePhase::CommandInput { member_cursor: 0 };
+        app.world_mut()
+            .resource_mut::<BattleStateRes>()
+            .reset_turn_commands(2);
+        app.world_mut().resource_mut::<PlayerInventoryRes>().0 = PlayerInventory {
+            items: vec!["やくそう".into()],
+            ..Default::default()
+        };
+        app
+    }
+
+    fn herbs(app: &App) -> usize {
+        app.world()
+            .resource::<PlayerInventoryRes>()
+            .items
+            .iter()
+            .filter(|i| i.as_str() == "やくそう")
+            .count()
+    }
+
+    /// 「どうぐ」を選んだだけでは草は減らず、仲間の指示選択で[Esc]戻りしても失われない。
+    /// ターン解決に入った時点で初めて1個消費される。
+    #[test]
+    fn herb_is_consumed_when_turn_resolves_not_when_selected() {
+        let mut app = command_app();
+
+        press(&mut app, KeyCode::Digit3); // どうぐ
+        assert_eq!(herbs(&app), 1, "選択しただけでは消費されない");
+
+        press(&mut app, KeyCode::Escape); // 主人公の選択に戻る
+        assert_eq!(herbs(&app), 1, "戻っても草は失われない");
+
+        press(&mut app, KeyCode::Digit3); // 改めてどうぐ
+        press(&mut app, KeyCode::Digit1); // 仲間: たたかう → ターン解決
+        assert!(matches!(
+            app.world().resource::<BattleStateRes>().phase,
+            BattlePhase::TurnResolving { .. }
+        ));
+        assert_eq!(herbs(&app), 0, "ターン解決で1個消費される");
+    }
+
+    /// 別の行動に切り替えてターンを解決した場合は、草は消費されない。
+    #[test]
+    fn herb_is_kept_when_another_action_is_chosen() {
+        let mut app = command_app();
+
+        press(&mut app, KeyCode::Digit3);
+        press(&mut app, KeyCode::Escape);
+        press(&mut app, KeyCode::Digit2); // みをまもる
+        press(&mut app, KeyCode::Digit1); // 仲間: たたかう → ターン解決
+        assert_eq!(herbs(&app), 1);
     }
 }
