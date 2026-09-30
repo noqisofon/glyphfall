@@ -3,6 +3,12 @@ use crate::party::{PartyMember, PlayerInventory, CURRENCY_NAME, CURRENCY_UNIT};
 /// 宿屋の一泊あたりの宿泊費用（フォリン）
 pub const INN_COST: i32 = 50;
 
+/// 冒険者ギルド免許（宿屋の身元確認を通すアイテム）の名前
+pub const GUILD_LICENSE_ITEM: &str = "冒険者ギルド免許";
+
+/// 衛兵に尋ねると免許が発行される話題名（Scenario000）
+pub const GUARD_REQUEST_TOPIC: &str = "衛兵の依頼";
+
 /// 話題ノードの種別（ADR-0028）
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TopicKind {
@@ -101,6 +107,21 @@ pub enum KnowledgeResponse {
     },
     /// 3. 知識そのものを答える
     Answer { text: String },
+}
+
+/// 会話の結果として付与されたアイテム（付与済みの事実と、表示用の入手通知）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ItemGrant {
+    pub item: &'static str,
+    /// 返答本文の後ろに続けて表示する入手通知
+    pub notice: &'static str,
+}
+
+/// `ask_query_granting`の結果: 知識への返答と、会話によるアイテム付与の有無。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueryOutcome {
+    pub response: KnowledgeResponse,
+    pub grant: Option<ItemGrant>,
 }
 
 /// 新人判定のタイミング（ADR-0028）
@@ -600,17 +621,17 @@ impl DialogueSession {
 
             // 衛兵に「冒険者ギルド免許」について尋ねる（取得条件を知る）
             (DialoguePartner::Guard, QuerySubject::Topic { name, .. }, None, QuestionType::What | QuestionType::DoYouKnow | QuestionType::Where)
-                if name == "冒険者ギルド免許" =>
+                if name == GUILD_LICENSE_ITEM =>
             {
                 KnowledgeResponse::Pointer {
                     text: "王都衛兵「冒険者ギルド免許か。身元のない流れ者でも、衛兵の依頼をこなせばギルドから免許が発行されるぜ」".into(),
-                    barrier: Some(AccessBarrier::RequiresItem("冒険者ギルド免許".into())),
+                    barrier: Some(AccessBarrier::RequiresItem(GUILD_LICENSE_ITEM.into())),
                 }
             }
 
             // 衛兵に「衛兵の依頼」について尋ねる（依頼達成・免許発行）
             (DialoguePartner::Guard, QuerySubject::Topic { name, .. }, None, QuestionType::What | QuestionType::DoYouKnow | QuestionType::Where)
-                if name == "衛兵の依頼" =>
+                if name == GUARD_REQUEST_TOPIC =>
             {
                 KnowledgeResponse::Answer {
                     text: "王都衛兵「迷宮周辺の巡回任務だな。よく引き受けてくれた！…よし、任務完了だ。これが【冒険者ギルド免許】だ！」".into(),
@@ -635,7 +656,7 @@ impl DialogueSession {
 
             // 宿屋の主人に「冒険者ギルド免許」について尋ねる
             (DialoguePartner::Inn, QuerySubject::Topic { name, .. }, None, QuestionType::DoYouKnow | QuestionType::What)
-                if name == "冒険者ギルド免許" =>
+                if name == GUILD_LICENSE_ITEM =>
             {
                 KnowledgeResponse::Answer {
                     text: "宿屋の主人「免許を持っていれば、うちの宿を君の正式な住所として登録して宿泊できるようになるよ」".into(),
@@ -703,6 +724,49 @@ impl DialogueSession {
         response
     }
 
+    /// `ask_query`を実行し、返答に応じたアイテム付与（Scenario000の免許発行）まで行う。
+    ///
+    /// 衛兵が「衛兵の依頼」に答えたとき、まだ免許を持っていなければ`inventory`に
+    /// 冒険者ギルド免許を加え、付与した内容を`QueryOutcome::grant`で返す。
+    /// 呼び出し側は結果を表示に反映するだけでよい。
+    /// 現状は尋ねた時点で即発行する暫定仕様（依頼の達成判定は未実装）。
+    pub fn ask_query_granting(
+        &mut self,
+        subject: &QuerySubject,
+        attribute: Option<&str>,
+        question: QuestionType,
+        current_location: &str,
+        inventory: &mut PlayerInventory,
+        reputation: i32,
+    ) -> QueryOutcome {
+        let response = self.ask_query(
+            subject,
+            attribute,
+            question,
+            current_location,
+            Some(&*inventory),
+            reputation,
+        );
+
+        let asked_guard_request = self.partner == DialoguePartner::Guard
+            && matches!(subject, QuerySubject::Topic { name, .. } if name == GUARD_REQUEST_TOPIC);
+        let grant = if asked_guard_request
+            && matches!(response, KnowledgeResponse::Answer { .. })
+            && !inventory.has_item(GUILD_LICENSE_ITEM)
+        {
+            inventory.add_item(GUILD_LICENSE_ITEM);
+            Some(ItemGrant {
+                item: GUILD_LICENSE_ITEM,
+                notice:
+                    "【冒険者ギルド免許】を手に入れた！\n（宿屋での身元確認が可能になりました）",
+            })
+        } else {
+            None
+        };
+
+        QueryOutcome { response, grant }
+    }
+
     /// 宿屋に泊まる処理（ADR-0028: 身元確認障壁の判定付き）
     /// 免許アイテム所持、または地域評判10以上で身元確認成立
     pub fn rest_at_inn(
@@ -711,7 +775,7 @@ impl DialogueSession {
         members: &mut [PartyMember],
         reputation: i32,
     ) -> Result<bool, AccessBarrier> {
-        let has_license = inv.has_item("冒険者ギルド免許");
+        let has_license = inv.has_item(GUILD_LICENSE_ITEM);
         let has_reputation = reputation >= 10;
 
         if !has_license && !has_reputation {
@@ -1395,6 +1459,143 @@ mod tests {
             0,
         );
         assert_eq!(learned_words(&tavern_q), vec!["裏の抜け道".to_string()]);
+    }
+
+    fn ask_guard(
+        session: &mut DialogueSession,
+        topic: &str,
+        question: QuestionType,
+        inv: &mut PlayerInventory,
+    ) -> QueryOutcome {
+        session.ask_query_granting(
+            &QuerySubject::from_topic_name(topic),
+            None,
+            question,
+            "王都アルカン",
+            inv,
+            0,
+        )
+    }
+
+    fn license_count(inv: &PlayerInventory) -> usize {
+        inv.items
+            .iter()
+            .filter(|i| i.as_str() == GUILD_LICENSE_ITEM)
+            .count()
+    }
+
+    #[test]
+    fn test_guard_request_grants_license() {
+        let mut inv = PlayerInventory::default();
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+
+        let outcome = ask_guard(
+            &mut guard,
+            GUARD_REQUEST_TOPIC,
+            QuestionType::What,
+            &mut inv,
+        );
+
+        assert!(matches!(outcome.response, KnowledgeResponse::Answer { .. }));
+        let grant = outcome.grant.expect("免許が付与されるはず");
+        assert_eq!(grant.item, GUILD_LICENSE_ITEM);
+        assert!(grant.notice.contains("冒険者ギルド免許"));
+        assert!(inv.has_item(GUILD_LICENSE_ITEM));
+        assert_eq!(license_count(&inv), 1);
+    }
+
+    #[test]
+    fn test_guard_request_grants_license_for_any_answering_question_type() {
+        for question in [
+            QuestionType::What,
+            QuestionType::DoYouKnow,
+            QuestionType::Where,
+        ] {
+            let mut inv = PlayerInventory::default();
+            let mut guard = DialogueSession::start(DialoguePartner::Guard);
+            let outcome = ask_guard(&mut guard, GUARD_REQUEST_TOPIC, question, &mut inv);
+            assert!(outcome.grant.is_some(), "{question:?}");
+            assert!(inv.has_item(GUILD_LICENSE_ITEM), "{question:?}");
+        }
+    }
+
+    #[test]
+    fn test_license_is_not_granted_for_other_topics_or_unanswered_questions() {
+        // 衛兵への他の話題（免許の取得条件を聞くだけ・無関係な話題）では付与されない
+        for topic in [GUILD_LICENSE_ITEM, "王都アルカン", "洞穴", "封魔の迷宮"] {
+            let mut inv = PlayerInventory::default();
+            let mut guard = DialogueSession::start(DialoguePartner::Guard);
+            let outcome = ask_guard(&mut guard, topic, QuestionType::What, &mut inv);
+            assert!(outcome.grant.is_none(), "{topic}");
+            assert!(!inv.has_item(GUILD_LICENSE_ITEM), "{topic}");
+        }
+
+        // 「衛兵の依頼」でも、返答が得られない聞き方（誰？）では付与されない
+        let mut inv = PlayerInventory::default();
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+        let outcome = ask_guard(&mut guard, GUARD_REQUEST_TOPIC, QuestionType::Who, &mut inv);
+        assert_eq!(outcome.response, KnowledgeResponse::Unknown);
+        assert!(outcome.grant.is_none());
+        assert!(!inv.has_item(GUILD_LICENSE_ITEM));
+    }
+
+    #[test]
+    fn test_license_is_only_granted_by_the_guard() {
+        for partner in [
+            DialoguePartner::Villager,
+            DialoguePartner::Tavern,
+            DialoguePartner::Suspicious,
+            DialoguePartner::Inn,
+        ] {
+            let mut inv = PlayerInventory::default();
+            let mut session = DialogueSession::start(partner);
+            let outcome = ask_guard(
+                &mut session,
+                GUARD_REQUEST_TOPIC,
+                QuestionType::What,
+                &mut inv,
+            );
+            assert!(outcome.grant.is_none(), "{partner:?}");
+            assert!(!inv.has_item(GUILD_LICENSE_ITEM), "{partner:?}");
+        }
+    }
+
+    #[test]
+    fn test_license_is_not_granted_twice() {
+        let mut inv = PlayerInventory::default();
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+
+        let first = ask_guard(
+            &mut guard,
+            GUARD_REQUEST_TOPIC,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(first.grant.is_some());
+
+        let second = ask_guard(
+            &mut guard,
+            GUARD_REQUEST_TOPIC,
+            QuestionType::What,
+            &mut inv,
+        );
+        // 返答自体は得られるが、二重には付与されない
+        assert!(matches!(second.response, KnowledgeResponse::Answer { .. }));
+        assert!(second.grant.is_none());
+        assert_eq!(license_count(&inv), 1);
+
+        // もともと免許を持っている場合も付与されない
+        let mut owner = PlayerInventory::default();
+        owner.add_item(GUILD_LICENSE_ITEM);
+        let mut guard2 = DialogueSession::start(DialoguePartner::Guard);
+        let outcome = ask_guard(
+            &mut guard2,
+            GUARD_REQUEST_TOPIC,
+            QuestionType::What,
+            &mut owner,
+        );
+        assert!(outcome.grant.is_none());
+        assert_eq!(license_count(&owner), 1);
     }
 
     fn learned_words(session: &DialogueSession) -> Vec<String> {
