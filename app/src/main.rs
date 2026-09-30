@@ -57,8 +57,24 @@ impl Default for TravelState {
     }
 }
 
-pub fn in_mode(target: AppMode) -> impl Fn(Res<AppMode>) -> bool {
-    move |mode: Res<AppMode>| *mode == target
+/// フレーム開始時点の`AppMode`のスナップショット。
+///
+/// 入力ハンドラは同じフレーム内で順に走るため、先行ハンドラがモードを切り替えると、
+/// 後続ハンドラが同じキー入力を新しいモードの操作として拾ってしまう
+/// （例: 話しかけの方向キー[S]が、遷移直後の道具屋で商品カーソル移動としても処理される）。
+/// `in_mode`はこのスナップショットと現在値の両方が一致するときだけ真にして、
+/// 遷移したフレームでは新モードのハンドラを動かさない。
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct FrameMode(pub AppMode);
+
+pub fn snapshot_frame_mode(mode: Res<AppMode>, mut frame_mode: ResMut<FrameMode>) {
+    if frame_mode.0 != *mode {
+        frame_mode.0 = *mode;
+    }
+}
+
+pub fn in_mode(target: AppMode) -> impl Fn(Res<AppMode>, Res<FrameMode>) -> bool {
+    move |mode: Res<AppMode>, frame_mode: Res<FrameMode>| *mode == target && frame_mode.0 == target
 }
 
 #[derive(Event, Debug, Clone)]
@@ -95,6 +111,7 @@ fn main() {
         .insert_resource(ClearColor(palette::BG))
         .add_plugins(flow::screens_plugin)
         .insert_resource(AppMode::Town)
+        .insert_resource(FrameMode(AppMode::Town))
         .insert_resource(PlayerInventoryRes::default())
         .insert_resource(ActiveDialogue::default())
         .insert_resource(CommandMenuState::default())
@@ -163,7 +180,11 @@ fn main() {
                     ui::dialogue_underline_tick,
                     ui::monster_flash_tick,
                 ),
+                // 入力ハンドラは実行順を固定（chain）し、フレーム開始時のモードで
+                // 振り分ける（`FrameMode`参照）。順序が曖昧だと同一フレームのキー入力が
+                // 遷移先ハンドラにも漏れ、実行順次第で挙動が変わってしまう。
                 (
+                    snapshot_frame_mode,
                     handle_common_input,
                     town::handle_town_input.run_if(in_mode(AppMode::Town)),
                     town::handle_interact_input.run_if(in_mode(AppMode::Interact)),
@@ -172,7 +193,8 @@ fn main() {
                     town::handle_inn_input.run_if(in_mode(AppMode::Inn)),
                     battle::handle_battle_input.run_if(in_mode(AppMode::Battle)),
                     town::handle_travel_input.run_if(in_mode(AppMode::Travel)),
-                ),
+                )
+                    .chain(),
                 (ui::update_message_window, ui::update_town_texture_system),
                 (
                     ui::update_status_header_system,
@@ -220,5 +242,106 @@ fn handle_common_input(
         party.selected_index = (party.selected_index + 1) % party.members.len();
         let member = &party.members[party.selected_index];
         msg_events.send(ShowMessage(format!("{}に　ちゅうもくした。", member.name)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glyphfall_core::party::{PartyState, PlayerInventory, PlayerResource};
+    use glyphfall_core::town::{TileType, TownState};
+
+    fn input_app(mode: AppMode) -> App {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<Time>();
+        app.insert_resource(mode);
+        app.insert_resource(FrameMode(mode));
+        app.insert_resource(TownStateRes {
+            state: TownState::new(),
+            texture_handle: Handle::default(),
+        });
+        app.insert_resource(PlayerInventoryRes(PlayerInventory::default()));
+        app.insert_resource(ActiveDialogue::default());
+        app.insert_resource(CommandMenuState::default());
+        app.insert_resource(TravelState::default());
+        app.insert_resource(PartyStateRes(PartyState {
+            selected_index: 0,
+            debug_mode: false,
+            members: vec![PartyMember::new_player("テスト旅人").with_stats(20, 0)],
+        }));
+        app.insert_resource(PlayerResourceRes(PlayerResource {
+            skills: PlayerSkills::default(),
+        }));
+        app.insert_resource(BattleStateRes(BattleState::new(create_default_monsters())));
+        app.add_event::<ShowMessage>();
+        // 本番(main)と同じ並び・同じ run_if で登録する
+        app.add_systems(
+            Update,
+            (
+                snapshot_frame_mode,
+                town::handle_town_input.run_if(in_mode(AppMode::Town)),
+                town::handle_interact_input.run_if(in_mode(AppMode::Interact)),
+                town::handle_shop_input.run_if(in_mode(AppMode::Shop)),
+                battle::handle_battle_input.run_if(in_mode(AppMode::Battle)),
+            )
+                .chain(),
+        );
+        app
+    }
+
+    fn press(app: &mut App, key: KeyCode) {
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(key);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+    }
+
+    fn drain_messages(app: &mut App) -> Vec<String> {
+        app.world_mut()
+            .resource_mut::<Events<ShowMessage>>()
+            .drain()
+            .map(|e| e.0)
+            .collect()
+    }
+
+    /// 話しかけの方向キー[S]が、遷移直後の道具屋の商品カーソル移動としても
+    /// 処理され、挨拶が上書きされていた不具合の回帰テスト。
+    #[test]
+    fn direction_key_that_opens_shop_is_not_reused_by_shop_handler() {
+        let mut app = input_app(AppMode::Interact);
+        {
+            let mut town = app.world_mut().resource_mut::<TownStateRes>();
+            let (x, y) = (town.player_pos.x, town.player_pos.y);
+            town.map.set(x, y + 1, TileType::Shop);
+        }
+        app.world_mut().resource_mut::<CommandMenuState>().stage =
+            CommandMenuStage::ChoosingDirection(CommandKind::Talk);
+
+        press(&mut app, KeyCode::KeyS);
+
+        assert_eq!(*app.world().resource::<AppMode>(), AppMode::Shop);
+        let index = app
+            .world()
+            .resource::<ActiveDialogue>()
+            .0
+            .as_ref()
+            .map(|s| s.selected_shop_index);
+        assert_eq!(index, Some(0));
+        let messages = drain_messages(&mut app);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(messages[0].contains("へいらっしゃい"), "{messages:?}");
+    }
+
+    /// 探索中の[B]でバトルに入ったフレームで、同じ[B]が戦闘離脱として
+    /// 処理されないこと。
+    #[test]
+    fn debug_battle_key_does_not_bounce_back_in_same_frame() {
+        let mut app = input_app(AppMode::Town);
+        press(&mut app, KeyCode::KeyB);
+        assert_eq!(*app.world().resource::<AppMode>(), AppMode::Battle);
     }
 }
