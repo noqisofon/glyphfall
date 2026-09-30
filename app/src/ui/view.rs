@@ -11,7 +11,7 @@ use crate::{
         QUESTION_TYPES,
     },
     ActiveDialogue, AppMode, CommandKind, CommandMenuStage, CommandMenuState, PlayerInventoryRes,
-    TravelState, SHOP_ITEMS,
+    TravelState, DEBUG_KEYS, SHOP_ITEMS,
 };
 use bevy::prelude::*;
 
@@ -213,7 +213,11 @@ pub fn format_status_header(
 
     match mode {
         AppMode::Town => {
-            header.push_str("操作: [WASD]移動 | [Z]コマンド | [L]松明切替 | [B]戦闘切替 | [Tab]仲間切替 | [Space]スキップ");
+            header.push_str("操作: [WASD]移動 | [Z]コマンド | [L]松明切替 | ");
+            if DEBUG_KEYS {
+                header.push_str("[B]戦闘切替 | ");
+            }
+            header.push_str("[Tab]仲間切替 | [Space]スキップ");
         }
         AppMode::Interact => match command_menu.stage {
             CommandMenuStage::ChoosingCommand => {
@@ -260,9 +264,10 @@ pub fn format_status_header(
             }
         }
         AppMode::Battle => {
-            header.push_str(
-                "操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行 | [N]敵切替 | [B]街へ帰還",
-            );
+            header.push_str("操作: [1-5]コマンド/指示 | [Space/Enter]ターン進行");
+            if DEBUG_KEYS {
+                header.push_str(" | [N]敵切替 | [B]街へ帰還");
+            }
         }
         AppMode::Travel => {
             if let Some(sim) = &travel.sim {
@@ -595,13 +600,17 @@ pub fn format_right_window(
                 }
             }
         }
-        AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into(),
+        AppMode::Town if DEBUG_KEYS => {
+            "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間\nB   :戦闘".into()
+        }
+        AppMode::Town => "[探索操作]\nWASD:移動\nZ   :コマンド\nTab :仲間".into(),
         AppMode::Battle => match &battle.phase {
             BattlePhase::CommandInput { member_cursor } => {
-                if *member_cursor == 0 {
-                    "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into()
-                } else {
-                    "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into()
+                match (*member_cursor == 0, DEBUG_KEYS) {
+                    (true, true) => "[1-5]行動\n[B]街へ帰還\n\n(あなた手番)".into(),
+                    (true, false) => "[1-5]行動\n\n(あなた手番)".into(),
+                    (false, true) => "[1-4]指示\n[Esc]戻る\n[B]街へ帰還\n\n(仲間手番)".into(),
+                    (false, false) => "[1-4]指示\n[Esc]戻る\n\n(仲間手番)".into(),
                 }
             }
             BattlePhase::TurnResolving { .. } => "[Space]次へ\n[Enter]次へ\n\n(ターン中)".into(),
@@ -796,7 +805,12 @@ pub fn update_town_texture_system(
     if party.is_changed() {
         town.state.dirty = true;
     }
-    town.update_texture(&party.members, &mut images);
+    // `update_texture`は`&mut self`のため、呼ぶだけで`ResMut`の変更検知が立ち、
+    // `town.is_changed()`を見る他のUI更新系が毎フレーム走ってしまう。
+    // 再描画が必要なとき(`dirty`)だけ呼ぶ。
+    if town.state.dirty {
+        town.update_texture(&party.members, &mut images);
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -1108,5 +1122,41 @@ mod tests {
         // 1280x720 (16:9 720p): 縦幅基準で 1.125倍に拡大
         let scale_720p = (1280.0 / base_w).min(720.0 / base_h);
         assert!((scale_720p - 1.125).abs() < 0.001);
+    }
+
+    /// 何も起きていないフレームで`TownStateRes`が変更扱いにならないこと
+    /// （毎フレームUIテキストを作り直す無駄の回帰テスト）。
+    #[test]
+    fn idle_frames_do_not_mark_town_resource_changed() {
+        use crate::town::TownStateRes;
+
+        #[derive(Resource, Default)]
+        struct ChangedFrames(u32);
+
+        fn probe(town: Res<TownStateRes>, mut frames: ResMut<ChangedFrames>) {
+            if town.is_changed() {
+                frames.0 += 1;
+            }
+        }
+
+        let mut app = App::new();
+        app.insert_resource(TownStateRes {
+            state: TownState::new(),
+            texture_handle: Handle::default(),
+        });
+        app.insert_resource(PartyStateRes(create_test_party()));
+        app.init_resource::<Assets<Image>>();
+        app.init_resource::<ChangedFrames>();
+        app.add_systems(Update, (update_town_texture_system, probe).chain());
+
+        // 最初の数フレームは挿入・初回描画による変更があり得る
+        for _ in 0..3 {
+            app.update();
+        }
+        let settled = app.world().resource::<ChangedFrames>().0;
+        for _ in 0..10 {
+            app.update();
+        }
+        assert_eq!(app.world().resource::<ChangedFrames>().0, settled);
     }
 }

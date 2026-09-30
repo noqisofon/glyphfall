@@ -2,6 +2,7 @@ use super::{BattlePhase, BattleStateRes};
 use crate::party::{PartyCommand, PlayerBattleAction};
 use crate::{
     AppMode, PartyStateRes, PlayerInventoryRes, PlayerResourceRes, ShowMessage, TownStateRes,
+    DEBUG_KEYS,
 };
 use bevy::prelude::*;
 use glyphfall_core::party::{PartyMember, PlayerSkills};
@@ -50,8 +51,10 @@ pub fn handle_battle_input(
 ) {
     let mut rng = thread_rng();
 
-    // [B]: いつでも戦闘離脱（街・探索へ復帰）
-    if keyboard.just_pressed(KeyCode::KeyB) {
+    // [B]: 戦闘離脱（デバッグビルド限定）。敗北画面の [B] は下の Defeat アームで
+    // 全快・宿屋帰還として処理するため、ここでは横取りしない。
+    let is_defeat = matches!(battle.phase, BattlePhase::Defeat);
+    if DEBUG_KEYS && !is_defeat && keyboard.just_pressed(KeyCode::KeyB) {
         *mode = AppMode::Town;
         town.last_encounter_pos = None;
         battle.reset_turn_commands(party.members.len());
@@ -63,8 +66,8 @@ pub fn handle_battle_input(
         return;
     }
 
-    // [N]: モンスター切り替え（テスト用）
-    if keyboard.just_pressed(KeyCode::KeyN) {
+    // [N]: モンスター切り替え（デバッグビルド限定）
+    if DEBUG_KEYS && keyboard.just_pressed(KeyCode::KeyN) {
         battle.next_monster(party.members.len());
         let mon = battle.current_monster();
         msg_events.send(ShowMessage(format!(
@@ -275,6 +278,70 @@ pub fn handle_battle_input(
                     "教会の神父に助け出され、王都の宿屋で目覚めた……\n（HP/MP全回復）".into(),
                 ));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::battle::{create_default_monsters, BattleState};
+    use crate::party::PartyState;
+    use crate::town::TownState;
+    use glyphfall_core::party::{PlayerInventory, PlayerResource};
+
+    fn defeat_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.insert_resource(AppMode::Battle);
+        app.insert_resource(TownStateRes {
+            state: TownState::new(),
+            texture_handle: Handle::default(),
+        });
+        app.insert_resource(PlayerInventoryRes(PlayerInventory::default()));
+        app.insert_resource(PartyStateRes(PartyState {
+            selected_index: 0,
+            debug_mode: false,
+            members: vec![PartyMember::new_player("テスト旅人").with_stats(20, 0)],
+        }));
+        app.insert_resource(PlayerResourceRes(PlayerResource {
+            skills: PlayerSkills::default(),
+        }));
+        let mut battle = BattleState::new(create_default_monsters());
+        battle.phase = BattlePhase::Defeat;
+        app.insert_resource(BattleStateRes(battle));
+        app.world_mut().resource_mut::<PartyStateRes>().members[0].hp = 0;
+        app.add_event::<ShowMessage>();
+        app.add_systems(Update, handle_battle_input);
+        app
+    }
+
+    fn press(app: &mut App, key: KeyCode) {
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(key);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+    }
+
+    /// 敗北画面の [B] / [Space] は「宿屋で全快して街へ戻る」処理になること
+    /// （以前は [B] が先に離脱処理へ横取りされ、HP 0 のまま探索へ戻っていた）。
+    #[test]
+    fn defeat_screen_keys_revive_party_at_inn() {
+        for key in [KeyCode::KeyB, KeyCode::Space, KeyCode::Enter] {
+            let mut app = defeat_app();
+            press(&mut app, key);
+
+            let party = app.world().resource::<PartyStateRes>();
+            assert_eq!(party.members[0].hp, party.members[0].max_hp, "{key:?}");
+            assert_eq!(*app.world().resource::<AppMode>(), AppMode::Town, "{key:?}");
+            assert_eq!(
+                app.world().resource::<BattleStateRes>().phase,
+                BattlePhase::CommandInput { member_cursor: 0 },
+                "{key:?}"
+            );
         }
     }
 }
