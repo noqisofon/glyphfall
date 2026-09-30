@@ -15,9 +15,9 @@ pub use input::{
 
 pub use glyphfall_core::town::{
     AreaId, CommandKind, DialoguePartner, DialogueSession, DialogueStage, InteractOutcome,
-    KnowledgeResponse, LearnableSpan, MoveOutcome, Position, QuerySubject, QuestionType,
-    TargetKind, TownState, TravelPhase, TravelPlan, TravelPosture, TravelSimulation,
-    TravelStepOutcome, TravelTransport, INN_COST, QUESTION_TYPES, SHOP_ITEMS,
+    LearnableSpan, MoveOutcome, Position, QuerySubject, QuestionType, TargetKind, TownState,
+    TravelPhase, TravelPlan, TravelPosture, TravelSimulation, TravelStepOutcome, TravelTransport,
+    INN_COST, QUESTION_TYPES, SHOP_ITEMS,
 };
 
 use bevy::prelude::*;
