@@ -68,7 +68,9 @@ pub fn classify_tile(tile: Option<TileType>) -> TargetKind {
             | TileType::Shop
             | TileType::NpcGuard
             | TileType::NpcVillager
-            | TileType::NpcSuspicious,
+            | TileType::NpcSuspicious
+            | TileType::NpcCheckpointGuard
+            | TileType::NpcKnightCommander,
         ) => TargetKind::Npc,
         Some(_) => TargetKind::Object,
     }
@@ -157,6 +159,12 @@ fn resolve_examine(
         TileType::NpcSuspicious => {
             InteractOutcome::Message("裏通りの怪しい男が油断なく辺りをうかがっている。".into())
         }
+        TileType::NpcCheckpointGuard => {
+            InteractOutcome::Message("関所の番人が街道の先を睨んでいる。".into())
+        }
+        TileType::NpcKnightCommander => {
+            InteractOutcome::Message("騎士団長が腕を組み、厳しい目で辺りを見渡している。".into())
+        }
         TileType::Sign => {
             let msg = match area {
                 AreaId::Town => SIGN_TEXT_TOWN,
@@ -199,31 +207,43 @@ fn resolve_examine(
     }
 }
 
+/// 話しかけられるタイルと、その会話相手の対応表。
+const TALK_PARTNERS: [(TileType, DialoguePartner); 8] = [
+    (TileType::Inn, DialoguePartner::Inn),
+    (TileType::Tavern, DialoguePartner::Tavern),
+    (TileType::Shop, DialoguePartner::Shop),
+    (TileType::NpcGuard, DialoguePartner::Guard),
+    (TileType::NpcVillager, DialoguePartner::Villager),
+    (TileType::NpcSuspicious, DialoguePartner::Suspicious),
+    (
+        TileType::NpcCheckpointGuard,
+        DialoguePartner::CheckpointGuard,
+    ),
+    (
+        TileType::NpcKnightCommander,
+        DialoguePartner::KnightCommander,
+    ),
+];
+
 fn resolve_talk(tile: Option<TileType>) -> InteractOutcome {
-    match tile {
-        Some(TileType::Inn) => InteractOutcome::StartDialogue(DialoguePartner::Inn),
-        Some(TileType::Tavern) => InteractOutcome::StartDialogue(DialoguePartner::Tavern),
-        Some(TileType::Shop) => InteractOutcome::StartDialogue(DialoguePartner::Shop),
-        Some(TileType::NpcGuard) => InteractOutcome::StartDialogue(DialoguePartner::Guard),
-        Some(TileType::NpcVillager) => InteractOutcome::StartDialogue(DialoguePartner::Villager),
-        Some(TileType::NpcSuspicious) => {
-            InteractOutcome::StartDialogue(DialoguePartner::Suspicious)
-        }
-        _ => InteractOutcome::Message("そこには話せる相手がいない。".into()),
+    let partner = tile.and_then(|t| {
+        TALK_PARTNERS
+            .iter()
+            .find(|(tile_type, _)| *tile_type == t)
+            .map(|&(_, partner)| partner)
+    });
+    match partner {
+        Some(partner) => InteractOutcome::StartDialogue(partner),
+        None => InteractOutcome::Message("そこには話せる相手がいない。".into()),
     }
 }
 
 fn resolve_steal(tile: Option<TileType>) -> InteractOutcome {
-    match tile {
-        Some(
-            TileType::NpcGuard
-            | TileType::NpcVillager
-            | TileType::NpcSuspicious
-            | TileType::Inn
-            | TileType::Tavern
-            | TileType::Shop,
-        ) => InteractOutcome::Message("「ぬすむ」コマンドはまだ準備中だ……".into()),
-        _ => InteractOutcome::Message("そこには盗めるものがない。".into()),
+    // 話しかけられる相手（人物・店）はすべて「ぬすむ」の対象候補
+    if classify_tile(tile) == TargetKind::Npc {
+        InteractOutcome::Message("「ぬすむ」コマンドはまだ準備中だ……".into())
+    } else {
+        InteractOutcome::Message("そこには盗めるものがない。".into())
     }
 }
 
@@ -399,5 +419,58 @@ mod tests {
         assert!(CommandKind::Examine.needs_direction());
         assert!(CommandKind::Talk.needs_direction());
         assert!(CommandKind::Steal.needs_direction());
+    }
+
+    #[test]
+    fn test_talk_starts_dialogue_with_every_partner_tile() {
+        let cases = [
+            (TileType::Inn, DialoguePartner::Inn),
+            (TileType::Tavern, DialoguePartner::Tavern),
+            (TileType::Shop, DialoguePartner::Shop),
+            (TileType::NpcGuard, DialoguePartner::Guard),
+            (TileType::NpcVillager, DialoguePartner::Villager),
+            (TileType::NpcSuspicious, DialoguePartner::Suspicious),
+            (
+                TileType::NpcCheckpointGuard,
+                DialoguePartner::CheckpointGuard,
+            ),
+            (
+                TileType::NpcKnightCommander,
+                DialoguePartner::KnightCommander,
+            ),
+        ];
+        for (tile, expected) in cases {
+            let mut map = TownMap::new(5, 5, TileType::Floor);
+            map.set(2, 1, tile);
+            let outcome = resolve(
+                &mut map,
+                Position { x: 2, y: 2 },
+                Facing::Up,
+                CommandKind::Talk,
+                AreaId::Town,
+            );
+            match outcome {
+                InteractOutcome::StartDialogue(partner) => {
+                    assert_eq!(partner, expected, "{tile:?}")
+                }
+                _ => panic!("{tile:?}: 会話が始まらなかった"),
+            }
+            // 人物なので、見る・盗むの対象にもなる
+            assert_eq!(classify_tile(Some(tile)), TargetKind::Npc, "{tile:?}");
+        }
+    }
+
+    #[test]
+    fn test_talk_to_non_partner_tile_gives_message() {
+        let mut map = TownMap::new(5, 5, TileType::Floor);
+        map.set(2, 1, TileType::Tree);
+        let outcome = resolve(
+            &mut map,
+            Position { x: 2, y: 2 },
+            Facing::Up,
+            CommandKind::Talk,
+            AreaId::Town,
+        );
+        assert!(matches!(outcome, InteractOutcome::Message(_)));
     }
 }

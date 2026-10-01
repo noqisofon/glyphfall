@@ -143,6 +143,8 @@ pub struct CharacterAtlas {
     pub mage: SpriteSheet,
     pub knight: SpriteSheet,
     pub guard: SpriteSheet,
+    pub checkpoint_guard: SpriteSheet,
+    pub knight_commander: SpriteSheet,
     pub villager: SpriteSheet,
     pub suspicious: SpriteSheet,
     pub monster: SpriteSheet,
@@ -158,6 +160,12 @@ impl CharacterAtlas {
             mage: SpriteSheet::from_bytes(include_bytes!("../../assets/Mage-Cyan.png")),
             knight: SpriteSheet::from_bytes(include_bytes!("../../assets/Human-Soldier-Cyan.png")),
             guard: SpriteSheet::from_bytes(include_bytes!("../../assets/Soldier-Blue.png")),
+            checkpoint_guard: SpriteSheet::from_bytes(include_bytes!(
+                "../../assets/Soldier-Red.png"
+            )),
+            knight_commander: SpriteSheet::from_bytes(include_bytes!(
+                "../../assets/Human-Soldier-Red.png"
+            )),
             villager: SpriteSheet::from_bytes(include_bytes!("../../assets/Human-Worker-Red.png")),
             suspicious: SpriteSheet::from_bytes(include_bytes!("../../assets/Orc-Peon-Cyan.png")),
             monster: SpriteSheet::from_bytes(include_bytes!("../../assets/Slime.png")),
@@ -289,6 +297,16 @@ fn get_tile_pixels(tile: TileType, area: AreaId) -> [Pixel; 256] {
         TileType::NpcSuspicious => {
             let mut base = floor_tile;
             overlay_sprite(&mut base, &chars.suspicious.get_sprite(0, 0));
+            base
+        }
+        TileType::NpcCheckpointGuard => {
+            let mut base = floor_tile;
+            overlay_sprite(&mut base, &chars.checkpoint_guard.get_sprite(0, 0));
+            base
+        }
+        TileType::NpcKnightCommander => {
+            let mut base = floor_tile;
+            overlay_sprite(&mut base, &chars.knight_commander.get_sprite(0, 0));
             base
         }
         TileType::MonsterSymbol => {

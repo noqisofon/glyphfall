@@ -1,3 +1,8 @@
+/// すずかけ村の関所の番人の位置
+pub const CHECKPOINT_GUARD_POS: (i32, i32) = (44, 5);
+/// 王都アルカン・封鎖された地下区画の奥にいる騎士団長の位置
+pub const KNIGHT_COMMANDER_POS: (i32, i32) = (43, 10);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AreaId {
     #[default]
@@ -74,6 +79,10 @@ pub enum TileType {
     NpcGuard,
     NpcVillager,
     NpcSuspicious,
+    /// マンティコア関所の番人（ADR-0028）
+    NpcCheckpointGuard,
+    /// ★★騎士団団長（ADR-0028）
+    NpcKnightCommander,
     /// 旅シミュレーション(ADR-0004)への入り口。接触すると移動姿勢選択（ADR-0013の
     /// 発生エンジンを介した道中ロール）を経て別の町・村へ移動する。単純な移動では
     /// 通過できない（`is_walkable`はfalse）。
@@ -108,6 +117,8 @@ impl TileType {
             TileType::NpcGuard => 'G',
             TileType::NpcVillager => 'P',
             TileType::NpcSuspicious => '?',
+            TileType::NpcCheckpointGuard => 'W',
+            TileType::NpcKnightCommander => 'K',
             TileType::RoadExit => '=',
             TileType::DungeonWall => '▓',
             TileType::DungeonFloor => '·',
@@ -254,6 +265,13 @@ impl TownMap {
         map.set(35, 11, TileType::DoorClosed); // 地下区画への門扉
         map.set(41, 11, TileType::StairsDown); // 地下迷宮への階段
         map.set(37, 11, TileType::NpcGuard); // 衛兵
+                                             // 地下区画の奥の行き止まり（階段の先）に駐屯する騎士団長。
+                                             // 10行目が通路として空いており、扉・衛兵・階段への動線を塞がない。
+        map.set(
+            KNIGHT_COMMANDER_POS.0,
+            KNIGHT_COMMANDER_POS.1,
+            TileType::NpcKnightCommander,
+        );
 
         // 南西エリア：貧民街裏路地
         for x in 1..=14 {
@@ -293,6 +311,12 @@ impl TownMap {
 
         // 東側の街道口：王都アルカンへ戻る旅シミュレーションの入り口
         map.set(width as i32 - 1, 6, TileType::RoadExit);
+        // 街道口の脇に立つ関所の番人。到着位置(44,6)と街道口への一直線は空けておく。
+        map.set(
+            CHECKPOINT_GUARD_POS.0,
+            CHECKPOINT_GUARD_POS.1,
+            TileType::NpcCheckpointGuard,
+        );
 
         // 中央の農村家屋
         for x in 18..=22 {
@@ -338,5 +362,82 @@ impl TownMap {
             (3, 4),
             rng,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::{HashSet, VecDeque};
+
+    /// 開閉できる扉は通行可として、`start`から歩いて到達できるマスを求める。
+    fn reachable(map: &TownMap, start: (i32, i32)) -> HashSet<(i32, i32)> {
+        let mut seen = HashSet::from([start]);
+        let mut queue = VecDeque::from([start]);
+        while let Some((x, y)) = queue.pop_front() {
+            for (nx, ny) in [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)] {
+                if seen.contains(&(nx, ny)) {
+                    continue;
+                }
+                let passable = map
+                    .get(nx, ny)
+                    .is_some_and(|t| t.is_walkable() || t == TileType::DoorClosed);
+                if passable {
+                    seen.insert((nx, ny));
+                    queue.push_back((nx, ny));
+                }
+            }
+        }
+        seen
+    }
+
+    /// NPCを置いても、他のマスへの動線を1マスも塞がないこと。
+    fn assert_npc_blocks_no_route(map: &TownMap, npc: (i32, i32), start: (i32, i32)) {
+        let mut without_npc = TownMap::new(map.width, map.height, TileType::Wall);
+        without_npc.tiles = map.tiles.clone();
+        without_npc.set(npc.0, npc.1, TileType::Floor);
+
+        let with = reachable(map, start);
+        let without = reachable(&without_npc, start);
+        assert!(!with.contains(&npc), "NPCのマスは歩けない");
+        assert_eq!(
+            with.len() + 1,
+            without.len(),
+            "NPC({npc:?})を置いたことで到達できないマスが生じた"
+        );
+        // 話しかける位置（NPCの4近傍のうち歩ける側）に必ず立てる
+        let talk_cells: Vec<_> = [
+            (npc.0, npc.1 - 1),
+            (npc.0, npc.1 + 1),
+            (npc.0 - 1, npc.1),
+            (npc.0 + 1, npc.1),
+        ]
+        .into_iter()
+        .filter(|&(x, y)| without.contains(&(x, y)))
+        .collect();
+        assert!(!talk_cells.is_empty());
+        assert!(talk_cells.iter().all(|c| with.contains(c)));
+    }
+
+    #[test]
+    fn test_knight_commander_is_placed_in_arkan_without_blocking_routes() {
+        let map = TownMap::create_arkan_capital();
+        let (x, y) = KNIGHT_COMMANDER_POS;
+        assert_eq!(map.get(x, y), Some(TileType::NpcKnightCommander));
+        // 王都の初期位置から、地下区画の階段まで従来どおり歩いてたどり着ける
+        let from_spawn = reachable(&map, (20, 5));
+        assert!(from_spawn.contains(&(41, 11)), "階段へ行けること");
+        assert_npc_blocks_no_route(&map, KNIGHT_COMMANDER_POS, (20, 5));
+    }
+
+    #[test]
+    fn test_checkpoint_guard_is_placed_in_village_without_blocking_routes() {
+        let map = TownMap::create_suzukake_village();
+        let (x, y) = CHECKPOINT_GUARD_POS;
+        assert_eq!(map.get(x, y), Some(TileType::NpcCheckpointGuard));
+        // 街道口からの到着位置(44,6)が歩けて、街道口(45,6)へ向かえる
+        assert!(map.get(44, 6).is_some_and(|t| t.is_walkable()));
+        assert_eq!(map.get(45, 6), Some(TileType::RoadExit));
+        assert_npc_blocks_no_route(&map, CHECKPOINT_GUARD_POS, (44, 6));
     }
 }

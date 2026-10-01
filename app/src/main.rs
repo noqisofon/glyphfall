@@ -344,4 +344,41 @@ mod tests {
         press(&mut app, KeyCode::KeyB);
         assert_eq!(*app.world().resource::<AppMode>(), AppMode::Battle);
     }
+
+    /// 関所の番人・騎士団長の正面で「はなす」を選ぶと、実際に会話モードへ入ること。
+    #[test]
+    fn talking_to_checkpoint_guard_and_knight_commander_starts_dialogue() {
+        use glyphfall_core::town::DialoguePartner;
+
+        for (tile, expected) in [
+            (
+                TileType::NpcCheckpointGuard,
+                DialoguePartner::CheckpointGuard,
+            ),
+            (
+                TileType::NpcKnightCommander,
+                DialoguePartner::KnightCommander,
+            ),
+        ] {
+            let mut app = input_app(AppMode::Interact);
+            {
+                let mut town = app.world_mut().resource_mut::<TownStateRes>();
+                let (x, y) = (town.player_pos.x, town.player_pos.y);
+                town.map.set(x, y + 1, tile);
+            }
+            app.world_mut().resource_mut::<CommandMenuState>().stage =
+                CommandMenuStage::ChoosingDirection(CommandKind::Talk);
+
+            press(&mut app, KeyCode::KeyS);
+
+            assert_eq!(*app.world().resource::<AppMode>(), AppMode::Dialogue);
+            let partner = app
+                .world()
+                .resource::<ActiveDialogue>()
+                .0
+                .as_ref()
+                .map(|s| s.partner);
+            assert_eq!(partner, Some(expected));
+        }
+    }
 }
