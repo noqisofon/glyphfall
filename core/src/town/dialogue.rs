@@ -6,6 +6,9 @@ pub const INN_COST: i32 = 50;
 /// 冒険者ギルド免許（宿屋の身元確認を通すアイテム）の名前
 pub const GUILD_LICENSE_ITEM: &str = "冒険者ギルド免許";
 
+/// 騎士団長への謁見に必要な紹介状（衛兵が発行。ADR-0028）
+pub const REFERRAL_LETTER_ITEM: &str = "衛兵の紹介状";
+
 /// 衛兵に尋ねると免許が発行される話題名（Scenario000）
 pub const GUARD_REQUEST_TOPIC: &str = "衛兵の依頼";
 
@@ -110,7 +113,7 @@ pub enum KnowledgeResponse {
 }
 
 /// 会話の結果として付与されたアイテム（付与済みの事実と、表示用の入手通知）。
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemGrant {
     pub item: &'static str,
     /// 返答本文の後ろに続けて表示する入手通知
@@ -166,6 +169,107 @@ impl DialoguePartner {
             _ => NewbieJudgment::None,
         }
     }
+}
+
+/// 「たずねる」の返答表の1行（`SHOP_ITEMS`と同じく静的データ）。
+///
+/// `ask_query`はまずこの表を引き、該当行があればその返答を使う。該当しなければ
+/// 従来の`match`による返答にフォールバックする。新しい会話・クエスト条件は
+/// `match`ではなくこの表に追加する（将来の外部データ化を見据えた形）。
+#[derive(Clone, Copy, Debug)]
+pub struct KnowledgeEntry {
+    /// 返答する相手
+    pub partner: DialoguePartner,
+    /// 対象となる話題名（いずれか）。属性なしの「たずねる」にのみ対応する
+    pub topics: &'static [&'static str],
+    /// 該当する聞き方（いずれか）
+    pub questions: &'static [QuestionType],
+    /// 返答を得るために所持している必要があるアイテム
+    pub requires_item: Option<&'static str>,
+    /// 返答本文
+    pub text: &'static str,
+    /// 共通のキーワード表に無い、この返答で下線にしたい語句
+    pub learn_words: &'static [&'static str],
+    /// この返答で付与するアイテム（所持済みなら付与しない）
+    pub grant: Option<ItemGrant>,
+}
+
+const ASK_ANY: &[QuestionType] = &[
+    QuestionType::What,
+    QuestionType::Where,
+    QuestionType::DoYouKnow,
+];
+
+/// 騎士団長への謁見に至る聞き込みチェーン（番人 → 衛兵 → 紹介状）。
+/// 先に一致した行が使われるため、前提条件のある行を前に置く。
+pub const KNOWLEDGE_ENTRIES: [KnowledgeEntry; 4] = [
+    // 番人にあいさつで下線の付く「この先」を尋ねると、団長への手がかりが得られる
+    KnowledgeEntry {
+        partner: DialoguePartner::CheckpointGuard,
+        topics: &["この先"],
+        questions: ASK_ANY,
+        requires_item: None,
+        text: "番人「この先はマンティコアの縄張りだ。討伐を預かる★★騎士団団長なら詳しいが、お前のような者にはなかなか会ってくださらんだろうな」",
+        learn_words: &[],
+        grant: None,
+    },
+    // 衛兵に団長のことを尋ねると、紹介状の存在と発行条件を教えてくれる
+    KnowledgeEntry {
+        partner: DialoguePartner::Guard,
+        topics: &["★★騎士団団長", "★★騎士団"],
+        questions: ASK_ANY,
+        requires_item: None,
+        text: "王都衛兵「★★騎士団団長か。封鎖された地下区画の奥に詰めておられる。会うには衛兵の紹介状が要るが、冒険者ギルド免許を持つ身元の確かな者になら書いてやろう」",
+        learn_words: &[REFERRAL_LETTER_ITEM],
+        grant: None,
+    },
+    // 免許を持っていれば、衛兵が紹介状を発行する
+    KnowledgeEntry {
+        partner: DialoguePartner::Guard,
+        topics: &[REFERRAL_LETTER_ITEM],
+        questions: ASK_ANY,
+        requires_item: Some(GUILD_LICENSE_ITEM),
+        text: "王都衛兵「免許を確認した。身元は確かだな。…ほら、★★騎士団団長宛ての紹介状だ。失礼のないようにな」",
+        learn_words: &[],
+        grant: Some(ItemGrant {
+            item: REFERRAL_LETTER_ITEM,
+            notice: "【衛兵の紹介状】を手に入れた！\n（★★騎士団団長に会う手がかりになります）",
+        }),
+    },
+    // 免許が無ければ発行を断られる
+    KnowledgeEntry {
+        partner: DialoguePartner::Guard,
+        topics: &[REFERRAL_LETTER_ITEM],
+        questions: ASK_ANY,
+        requires_item: None,
+        text: "王都衛兵「紹介状か。身元の保証がない者には書けんな。冒険者ギルド免許を持ってから出直してこい」",
+        learn_words: &[],
+        grant: None,
+    },
+];
+
+/// 返答表から、現在の相手・対象・聞き方・所持品に該当する最初の行を探す。
+fn find_knowledge_entry(
+    partner: DialoguePartner,
+    subject: &QuerySubject,
+    attribute: Option<&str>,
+    question: QuestionType,
+    inventory: Option<&PlayerInventory>,
+) -> Option<&'static KnowledgeEntry> {
+    let QuerySubject::Topic { name, .. } = subject else {
+        return None;
+    };
+    if attribute.is_some() {
+        return None;
+    }
+    KNOWLEDGE_ENTRIES.iter().find(|entry| {
+        entry.partner == partner
+            && entry.topics.contains(&name.as_str())
+            && entry.questions.contains(&question)
+            && entry
+                .requires_item
+                .is_none_or(|item| inventory.is_some_and(|inv| inv.has_item(item)))
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -461,6 +565,17 @@ impl DialogueSession {
     ) -> KnowledgeResponse {
         self.stage = DialogueStage::Talking;
 
+        // 返答表（KNOWLEDGE_ENTRIES）に該当する行があれば、それを返す
+        if let Some(entry) =
+            find_knowledge_entry(self.partner, subject, attribute, question, inventory)
+        {
+            let response = KnowledgeResponse::Answer {
+                text: entry.text.to_string(),
+            };
+            self.set_reply(&response, entry.learn_words);
+            return response;
+        }
+
         let response = match (self.partner, subject, attribute, question) {
             // --- 1. 文脈トークン: 「ここ」 ---
             (_, QuerySubject::Here, None, QuestionType::Where) => {
@@ -580,7 +695,7 @@ impl DialogueSession {
             {
                 KnowledgeResponse::Pointer {
                     text: "番人「団長なら◇◇砦に赴任しているが、お前のようなやつにはお会いにならないだろうな」".into(),
-                    barrier: Some(AccessBarrier::RequiresItem("衛兵の紹介状".into())),
+                    barrier: Some(AccessBarrier::RequiresItem(REFERRAL_LETTER_ITEM.into())),
                 }
             }
 
@@ -588,7 +703,7 @@ impl DialogueSession {
             (DialoguePartner::KnightCommander, QuerySubject::Topic { name, .. }, Some("弱点"), QuestionType::What)
                 if name == "マンティコア" =>
             {
-                let barrier = AccessBarrier::RequiresItem("衛兵の紹介状".into());
+                let barrier = AccessBarrier::RequiresItem(REFERRAL_LETTER_ITEM.into());
                 if barrier.is_satisfied(inventory, reputation) {
                     KnowledgeResponse::Answer {
                         text: "団長「ほう、衛兵の紹介状か。…マンティコアの弱点だな？あいつの分厚い鬣には氷の魔術が有効だ」".into(),
@@ -686,8 +801,15 @@ impl DialogueSession {
             _ => KnowledgeResponse::Unknown,
         };
 
+        self.set_reply(&response, &[]);
+        response
+    }
+
+    /// 返答を`current_text`に反映し、下線にする語句（`learnable_spans`）を求める。
+    /// `extra_words`は共通のキーワード表に加えて下線にする語句。
+    fn set_reply(&mut self, response: &KnowledgeResponse, extra_words: &[&str]) {
         // 返答テキストの設定
-        let raw_text = match &response {
+        let raw_text = match response {
             KnowledgeResponse::Answer { text } => text.clone(),
             KnowledgeResponse::Pointer { text, .. } => text.clone(),
             KnowledgeResponse::Unknown => {
@@ -718,10 +840,13 @@ impl DialogueSession {
             "宿屋",
             "洞穴",
         ];
-        self.learnable_spans = spans_for(&raw_text, &known_keywords);
+        let words: Vec<&str> = known_keywords
+            .iter()
+            .copied()
+            .chain(extra_words.iter().copied())
+            .collect();
+        self.learnable_spans = spans_for(&raw_text, &words);
         self.current_text = raw_text;
-
-        response
     }
 
     /// `ask_query`を実行し、返答に応じたアイテム付与（Scenario000の免許発行）まで行う。
@@ -763,6 +888,23 @@ impl DialogueSession {
         } else {
             None
         };
+
+        // 返答表の行が付与するアイテム（紹介状など）。所持済みなら付与しない。
+        let grant = grant.or_else(|| {
+            let entry = find_knowledge_entry(
+                self.partner,
+                subject,
+                attribute,
+                question,
+                Some(&*inventory),
+            )?;
+            let table_grant = entry.grant?;
+            if inventory.has_item(table_grant.item) {
+                return None;
+            }
+            inventory.add_item(table_grant.item);
+            Some(table_grant)
+        });
 
         QueryOutcome { response, grant }
     }
@@ -1082,7 +1224,7 @@ mod tests {
                 ));
                 assert_eq!(
                     barrier,
-                    Some(AccessBarrier::RequiresItem("衛兵の紹介状".into()))
+                    Some(AccessBarrier::RequiresItem(REFERRAL_LETTER_ITEM.into()))
                 );
             }
             _ => panic!("Expected Pointer with barrier"),
@@ -1596,6 +1738,244 @@ mod tests {
         );
         assert!(outcome.grant.is_none());
         assert_eq!(license_count(&owner), 1);
+    }
+
+    /// 返答表の各行が壊れていないこと（空の行・本文に無い下線語句・不正な付与）。
+    #[test]
+    fn test_knowledge_entries_are_well_formed() {
+        for entry in KNOWLEDGE_ENTRIES.iter() {
+            assert!(!entry.topics.is_empty(), "{entry:?}");
+            assert!(!entry.questions.is_empty(), "{entry:?}");
+            assert!(!entry.text.is_empty(), "{entry:?}");
+            for word in entry.learn_words {
+                assert!(
+                    entry.text.contains(word),
+                    "下線語句「{word}」が本文に無い: {}",
+                    entry.text
+                );
+            }
+            if let Some(grant) = entry.grant {
+                // アイテムを付与する行は、本文を得るための前提条件を持つ
+                assert!(entry.requires_item.is_some(), "{entry:?}");
+                assert!(!grant.notice.is_empty());
+            }
+        }
+    }
+
+    fn ask(
+        session: &mut DialogueSession,
+        topic: &str,
+        attribute: Option<&str>,
+        question: QuestionType,
+        inv: &mut PlayerInventory,
+    ) -> QueryOutcome {
+        session.ask_query_granting(
+            &QuerySubject::from_topic_name(topic),
+            attribute,
+            question,
+            "王都アルカン",
+            inv,
+            0,
+        )
+    }
+
+    #[test]
+    fn test_checkpoint_guard_this_way_points_to_commander() {
+        let mut inv = PlayerInventory::default();
+        let mut guard = DialogueSession::start(DialoguePartner::CheckpointGuard);
+        // あいさつの本文で「この先」が下線になる（覚えられる）
+        assert!(learned_words(&guard).contains(&"この先".to_string()));
+
+        let outcome = ask(&mut guard, "この先", None, QuestionType::What, &mut inv);
+        assert!(matches!(outcome.response, KnowledgeResponse::Answer { .. }));
+        assert!(guard.current_text.contains("★★騎士団団長"));
+        assert!(learned_words(&guard).contains(&"★★騎士団団長".to_string()));
+        assert!(outcome.grant.is_none());
+    }
+
+    #[test]
+    fn test_guard_refuses_letter_without_license() {
+        let mut inv = PlayerInventory::default();
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+
+        let outcome = ask(
+            &mut guard,
+            REFERRAL_LETTER_ITEM,
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(matches!(outcome.response, KnowledgeResponse::Answer { .. }));
+        assert!(guard.current_text.contains("身元の保証がない者には書けん"));
+        assert!(outcome.grant.is_none());
+        assert!(!inv.has_item(REFERRAL_LETTER_ITEM));
+    }
+
+    #[test]
+    fn test_guard_issues_letter_once_to_license_holder() {
+        let mut inv = PlayerInventory::default();
+        inv.add_item(GUILD_LICENSE_ITEM);
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+
+        let first = ask(
+            &mut guard,
+            REFERRAL_LETTER_ITEM,
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        let grant = first.grant.expect("紹介状が発行されるはず");
+        assert_eq!(grant.item, REFERRAL_LETTER_ITEM);
+        assert!(inv.has_item(REFERRAL_LETTER_ITEM));
+
+        let second = ask(
+            &mut guard,
+            REFERRAL_LETTER_ITEM,
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(matches!(second.response, KnowledgeResponse::Answer { .. }));
+        assert!(second.grant.is_none());
+        assert_eq!(
+            inv.items
+                .iter()
+                .filter(|i| i.as_str() == REFERRAL_LETTER_ITEM)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_only_the_guard_issues_the_letter() {
+        for partner in [
+            DialoguePartner::Villager,
+            DialoguePartner::Tavern,
+            DialoguePartner::CheckpointGuard,
+            DialoguePartner::KnightCommander,
+        ] {
+            let mut inv = PlayerInventory::default();
+            inv.add_item(GUILD_LICENSE_ITEM);
+            let mut session = DialogueSession::start(partner);
+            let outcome = ask(
+                &mut session,
+                REFERRAL_LETTER_ITEM,
+                None,
+                QuestionType::What,
+                &mut inv,
+            );
+            assert!(outcome.grant.is_none(), "{partner:?}");
+            assert!(!inv.has_item(REFERRAL_LETTER_ITEM), "{partner:?}");
+        }
+    }
+
+    /// 番人 →（衛兵）→ 紹介状 → 団長・番人の返答、までのチェーンが最後まで進められること。
+    #[test]
+    fn test_referral_chain_reaches_knight_commander() {
+        let mut inv = PlayerInventory::default();
+        let manticore = QuerySubject::from_topic_name("マンティコア");
+
+        // 1. 番人: 「この先」→ 団長の名を知る
+        let mut checkpoint = DialogueSession::start(DialoguePartner::CheckpointGuard);
+        ask(
+            &mut checkpoint,
+            "この先",
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(learned_words(&checkpoint).contains(&"★★騎士団団長".to_string()));
+        inv.learn_topic("★★騎士団団長");
+
+        // 2. 番人: 「団長→どこ？」で所在と障壁（紹介状）を知る
+        let located = ask(
+            &mut checkpoint,
+            "★★騎士団団長",
+            None,
+            QuestionType::Where,
+            &mut inv,
+        );
+        assert_eq!(
+            located.response,
+            KnowledgeResponse::Pointer {
+                text: "番人「団長なら◇◇砦に赴任しているが、お前のようなやつにはお会いにならないだろうな」"
+                    .into(),
+                barrier: Some(AccessBarrier::RequiresItem(REFERRAL_LETTER_ITEM.into())),
+            }
+        );
+
+        // 3. 衛兵: 「団長」→ 紹介状の存在と条件を知る
+        let mut guard = DialogueSession::start(DialoguePartner::Guard);
+        ask(
+            &mut guard,
+            "★★騎士団団長",
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(learned_words(&guard).contains(&REFERRAL_LETTER_ITEM.to_string()));
+        inv.learn_topic(REFERRAL_LETTER_ITEM);
+
+        // 4. 免許がまだ無いので断られる
+        let refused = ask(
+            &mut guard,
+            REFERRAL_LETTER_ITEM,
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(refused.grant.is_none());
+
+        // 5. 免許（衛兵の依頼）を得て、紹介状を発行してもらう
+        let license = ask(
+            &mut guard,
+            GUARD_REQUEST_TOPIC,
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert!(license.grant.is_some());
+        let letter = ask(
+            &mut guard,
+            REFERRAL_LETTER_ITEM,
+            None,
+            QuestionType::What,
+            &mut inv,
+        );
+        assert_eq!(letter.grant.map(|g| g.item), Some(REFERRAL_LETTER_ITEM));
+
+        // 6. 団長: 紹介状なしでは門前払い、紹介状ありなら弱点を教えてくれる
+        let mut commander = DialogueSession::start(DialoguePartner::KnightCommander);
+        let mut empty = PlayerInventory::default();
+        let denied = commander.ask_query(
+            &manticore,
+            Some("弱点"),
+            QuestionType::What,
+            "王都アルカン",
+            Some(&empty),
+            0,
+        );
+        assert!(matches!(denied, KnowledgeResponse::Pointer { .. }));
+        let answered = commander.ask_query(
+            &manticore,
+            Some("弱点"),
+            QuestionType::What,
+            "王都アルカン",
+            Some(&inv),
+            0,
+        );
+        assert!(matches!(answered, KnowledgeResponse::Answer { .. }));
+        assert!(commander.current_text.contains("氷の魔術が有効だ"));
+        empty.add_item(REFERRAL_LETTER_ITEM);
+        let with_letter_only = commander.ask_query(
+            &manticore,
+            Some("弱点"),
+            QuestionType::What,
+            "王都アルカン",
+            Some(&empty),
+            0,
+        );
+        assert!(matches!(with_letter_only, KnowledgeResponse::Answer { .. }));
     }
 
     fn learned_words(session: &DialogueSession) -> Vec<String> {

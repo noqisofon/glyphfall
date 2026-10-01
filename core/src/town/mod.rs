@@ -7,9 +7,10 @@ pub mod movement;
 pub mod travel;
 
 pub use dialogue::{
-    DialogueLearnStage, DialoguePartner, DialogueSession, DialogueStage, ItemGrant,
+    DialogueLearnStage, DialoguePartner, DialogueSession, DialogueStage, ItemGrant, KnowledgeEntry,
     KnowledgeResponse, LearnableSpan, QueryOutcome, QuerySubject, QuestionType,
-    GUARD_REQUEST_TOPIC, GUILD_LICENSE_ITEM, INN_COST, QUESTION_TYPES, SHOP_ITEMS,
+    GUARD_REQUEST_TOPIC, GUILD_LICENSE_ITEM, INN_COST, KNOWLEDGE_ENTRIES, QUESTION_TYPES,
+    REFERRAL_LETTER_ITEM, SHOP_ITEMS,
 };
 pub use fov::FovMap;
 pub use interact::{CommandKind, InteractOutcome, TargetKind};

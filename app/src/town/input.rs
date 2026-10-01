@@ -1223,4 +1223,52 @@ mod tests {
             assert_eq!(party.members[0].hp, party.members[0].max_hp);
         }
     }
+
+    /// UI操作（たずねる）だけで、衛兵から紹介状を入手できること。
+    #[test]
+    fn test_guard_issues_referral_letter_via_ui() {
+        let mut app = create_test_dialogue_app(DialoguePartner::Guard);
+        {
+            let mut inv = app.world_mut().resource_mut::<PlayerInventoryRes>();
+            inv.add_item("冒険者ギルド免許");
+            inv.learn_topic("衛兵の紹介状");
+        }
+
+        press_key(&mut app, KeyCode::Digit1); // たずねる開始
+        press_key(&mut app, KeyCode::KeyS);
+        press_key(&mut app, KeyCode::KeyS);
+        press_key(&mut app, KeyCode::KeyS); // cursor 3 = 衛兵の紹介状
+        press_key(&mut app, KeyCode::Digit1); // 対象確定
+        press_key(&mut app, KeyCode::Digit1); // 何？ → 実行
+
+        let inv = app.world().resource::<PlayerInventoryRes>();
+        assert!(inv.has_item("衛兵の紹介状"));
+        let session = app.world().resource::<ActiveDialogue>().0.as_ref().unwrap();
+        assert!(session.current_text.contains("紹介状だ"));
+    }
+
+    /// UI操作だけで、番人の「この先」から団長の名前を覚えられること。
+    #[test]
+    fn test_checkpoint_guard_hint_is_reachable_via_ui() {
+        let mut app = create_test_dialogue_app(DialoguePartner::CheckpointGuard);
+        app.world_mut()
+            .resource_mut::<PlayerInventoryRes>()
+            .learn_topic("この先");
+
+        press_key(&mut app, KeyCode::Digit1);
+        press_key(&mut app, KeyCode::KeyS);
+        press_key(&mut app, KeyCode::KeyS);
+        press_key(&mut app, KeyCode::KeyS); // cursor 3 = この先
+        press_key(&mut app, KeyCode::Digit1);
+        press_key(&mut app, KeyCode::Digit1);
+
+        let session = app.world().resource::<ActiveDialogue>().0.as_ref().unwrap();
+        assert!(session.current_text.contains("★★騎士団団長"));
+        let words: Vec<String> = session
+            .learnable_spans
+            .iter()
+            .map(|s| s.slice(&session.current_text))
+            .collect();
+        assert!(words.contains(&"★★騎士団団長".to_string()));
+    }
 }
