@@ -235,6 +235,8 @@ pub fn try_move_player(
         TileType::NpcGuard => MoveOutcome::Blocked { message: None },
         TileType::NpcVillager => MoveOutcome::Blocked { message: None },
         TileType::NpcSuspicious => MoveOutcome::Blocked { message: None },
+        TileType::NpcCheckpointGuard => MoveOutcome::Blocked { message: None },
+        TileType::NpcKnightCommander => MoveOutcome::Blocked { message: None },
         TileType::Wall => MoveOutcome::Blocked {
             message: Some("頑丈な石壁だ。進むことはできない。".into()),
         },
